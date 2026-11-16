@@ -1,0 +1,209 @@
+{
+  "models": [
+    {
+      "id": "gemini-2.5-flash",
+      "kind": "text",
+      "enabled": true,
+      "qualityTier": "high",
+      "limits": {
+        "rpm": 5,
+        "tpm": 250000,
+        "rpd": 20,
+        "maxInputTokens": 1000000,
+        "maxConcurrent": 2
+      }
+    },
+    {
+      "id": "gemini-3.6-flash",
+      "kind": "text",
+      "enabled": true,
+      "qualityTier": "high",
+      "limits": {
+        "rpm": 5,
+        "tpm": 250000,
+        "rpd": 20,
+        "maxInputTokens": 1000000,
+        "maxConcurrent": 2
+      }
+    },
+    {
+      "id": "gemini-3.8-flash",
+      "kind": "text",
+      "enabled": true,
+      "qualityTier": "high",
+      "limits": {
+        "rpm": 5,
+        "tpm": 250000,
+        "rpd": 20,
+        "maxInputTokens": 1000000,
+        "maxConcurrent": 2
+      }
+    },
+    {
+      "id": "gemini-3-flash",
+      "kind": "text",
+      "enabled": true,
+      "qualityTier": "high",
+      "limits": {
+        "rpm": 5,
+        "tpm": 250000,
+        "rpd": 20,
+        "maxInputTokens": 1000000,
+        "maxConcurrent": 2
+      }
+    },
+    {
+      "id": "gemini-3.5-flash-lite",
+      "kind": "text",
+      "enabled": true,
+      "qualityTier": "medium",
+      "limits": {
+        "rpm": 15,
+        "tpm": 250000,
+        "rpd": 500,
+        "maxInputTokens": 1000000,
+        "maxConcurrent": 4
+      }
+    },
+    {
+      "id": "gemini-3.1-flash-lite",
+      "kind": "text",
+      "enabled": true,
+      "qualityTier": "medium",
+      "limits": {
+        "rpm": 15,
+        "tpm": 250000,
+        "rpd": 500,
+        "maxInputTokens": 1000000,
+        "maxConcurrent": 4
+      }
+    },
+    {
+      "id": "gemini-2.5-flash-lite",
+      "kind": "text",
+      "enabled": true,
+      "qualityTier": "medium",
+      "limits": {
+        "rpm": 10,
+        "tpm": 250000,
+        "rpd": 20,
+        "maxInputTokens": 1000000,
+        "maxConcurrent": 3
+      }
+    },
+    {
+      "id": "gemini-1.5-flash",
+      "kind": "text",
+      "enabled": true,
+      "qualityTier": "fallback",
+      "limits": {
+        "rpm": 15,
+        "tpm": 1000000,
+        "rpd": 1500,
+        "maxInputTokens": 1000000,
+        "maxConcurrent": 3
+      }
+    },
+    {
+      "id": "gemini-2.5-flash-preview-tts",
+      "kind": "tts",
+      "enabled": true,
+      "qualityTier": "high",
+      "limits": {
+        "rpm": 3,
+        "tpm": 10000,
+        "rpd": 10,
+        "maxInputTokens": 5000,
+        "maxConcurrent": 1
+      }
+    },
+    {
+      "id": "gemini-2.5-flash-live",
+      "kind": "live-audio",
+      "enabled": true,
+      "qualityTier": "high",
+      "limits": {
+        "rpm": 60,
+        "tpm": 1000000,
+        "rpd": 10000,
+        "maxInputTokens": 30000,
+        "maxConcurrent": 2
+      }
+    },
+    {
+      "id": "gemini-3-flash-live",
+      "kind": "live-audio",
+      "enabled": true,
+      "qualityTier": "high",
+      "limits": {
+        "rpm": 30,
+        "tpm": 65000,
+        "rpd": 500,
+        "maxInputTokens": 20000,
+        "maxConcurrent": 1
+      }
+    },
+    {
+      "id": "gemini-3.8-live",
+      "kind": "live-audio",
+      "enabled": true,
+      "qualityTier": "high",
+      "limits": {
+        "rpm": 30,
+        "tpm": 65000,
+        "rpd": 500,
+        "maxInputTokens": 20000,
+        "maxConcurrent": 1
+      }
+    },
+    {
+      "id": "google-cloud-tts",
+      "kind": "cloud-tts",
+      "enabled": false,
+      "qualityTier": "fallback",
+      "limits": {
+        "rpm": 300,
+        "tpm": 1000000,
+        "rpd": 100000,
+        "maxInputTokens": 5000,
+        "maxConcurrent": 5
+      }
+    }
+  ],
+  "taskPriorities": {
+    "outline": [
+      "gemini-2.5-flash",
+      "gemini-3.6-flash",
+      "gemini-3.8-flash",
+      "gemini-3-flash",
+      "gemini-3.5-flash-lite",
+      "gemini-3.1-flash-lite",
+      "gemini-1.5-flash"
+    ],
+    "script": [
+      "gemini-3.5-flash-lite",
+      "gemini-3.1-flash-lite",
+      "gemini-2.5-flash",
+      "gemini-3.6-flash",
+      "gemini-3.8-flash",
+      "gemini-3-flash",
+      "gemini-2.5-flash-lite",
+      "gemini-1.5-flash"
+    ],
+    "voice": [
+      "gemini-2.5-flash-preview-tts",
+      "gemini-2.5-flash-live",
+      "gemini-3-flash-live",
+      "gemini-3.8-live",
+      "google-cloud-tts"
+    ]
+  },
+  "settings": {
+    "dailyResetTimeUtc": "08:00",
+    "circuitBreakerFailureThreshold": 3,
+    "circuitBreakerCooldownSeconds": 180,
+    "defaultCooldownOn429Seconds": 60,
+    "maxCapacityWaitHours": 24,
+    "verbatimWerThreshold": 0.08
+  }
+}

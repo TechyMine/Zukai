@@ -14,7 +14,9 @@
     "eval:full": "tsx eval/evalRunner.ts",
     "eval:smoke": "tsx eval/evalRunner.ts --smoke",
     "eval:gate": "tsx eval/evalRunner.ts --gate",
-    "feedback:report": "tsx src/scripts/feedbackReport.ts"
+    "feedback:report": "tsx src/scripts/feedbackReport.ts",
+    "doctor": "tsx src/scripts/doctor.ts",
+    "quota:status": "tsx src/scripts/quotaStatus.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",

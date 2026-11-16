@@ -22,7 +22,8 @@ export type JobStatus =
   | 'assembling'
   | 'ready'
   | 'failed'
-  | 'canceled';
+  | 'canceled'
+  | 'waiting_for_capacity';
 export type AudioLanguage = 'english' | 'hinglish';
 export type DepthMode = 'quick' | 'standard' | 'deep';
 export type PlanTier = 'free' | 'pro' | 'team' | 'enterprise';
@@ -228,6 +229,11 @@ export interface Database {
           cost_micros: number;
           started_at: string | null;
           finished_at: string | null;
+          resume_at?: string | null;
+          waiting_reason?: string | null;
+          capacity_waits?: number;
+          step_detail?: Record<string, any>;
+          providers_used?: any[];
           created_at: string;
           updated_at: string;
         };
@@ -251,6 +257,11 @@ export interface Database {
           cost_micros?: number;
           started_at?: string | null;
           finished_at?: string | null;
+          resume_at?: string | null;
+          waiting_reason?: string | null;
+          capacity_waits?: number;
+          step_detail?: Record<string, any>;
+          providers_used?: any[];
           created_at?: string;
           updated_at?: string;
         };
@@ -274,6 +285,11 @@ export interface Database {
           cost_micros?: number;
           started_at?: string | null;
           finished_at?: string | null;
+          resume_at?: string | null;
+          waiting_reason?: string | null;
+          capacity_waits?: number;
+          step_detail?: Record<string, any>;
+          providers_used?: any[];
           created_at?: string;
           updated_at?: string;
         };

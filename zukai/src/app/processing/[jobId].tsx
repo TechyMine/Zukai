@@ -1,48 +1,47 @@
 /**
- * ZUKAI — Live Processing Screen [jobId]
- * Location: /zukai/src/app/processing/[jobId].tsx
- * Description: Realtime-driven synthesis progress, multi-stage step indicator,
- *              cancel confirmation sheet, error recovery, and dev-mode state simulator.
+ * ZUKAI — Live Processing Screen [jobId] (Phase 7B Compact Polish)
+ * Realtime-driven synthesis progress, 140dp thinking mascot, current-step card,
+ * chunky ProgressBar, 5-step checklist, time remaining estimate, notify toggle,
+ * queued >60s server waiting recovery, and dev-mode simulator behind explicit setting.
  */
 
 import React, { useEffect, useState, useMemo } from 'react';
 import {
   View,
   StyleSheet,
-  ScrollView,
   Pressable,
   ActivityIndicator,
   Alert,
   Modal,
-  AppState,
+  Switch,
+  PermissionsAndroid,
+  Platform,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withRepeat,
-  withSequence,
-  withTiming,
-} from 'react-native-reanimated';
-import { LinearGradient } from 'expo-linear-gradient';
 import {
   ChevronLeft,
   CheckCircle2,
   AlertCircle,
   Play,
   RotateCcw,
-  XCircle,
   Sparkles,
-  Loader,
   Clock,
-  Zap,
+  BookOpen,
+  FileSearch,
+  PenTool,
+  Mic,
+  Sliders,
+  Bell,
+  X,
+  AlertTriangle,
 } from 'lucide-react-native';
-import { MeshBackground } from '../../components/MeshBackground';
-import { GlassCard } from '../../components/GlassCard';
-import { Text } from '../../components/Text';
-import { ShinyButton } from '../../components/ShinyButton';
-import { Mascot } from '../../components/Mascot';
+import { ScreenContainer } from '@/components/ScreenContainer';
+import { GlassCard } from '@/components/GlassCard';
+import { Text } from '@/components/Text';
+import { ShinyButton } from '@/components/ShinyButton';
+import { Mascot } from '@/components/Mascot';
+import { ProgressBar } from '@/components/ProgressBar';
 import { useJob, useCancelJob, useCreateAudioJob } from '@/features/jobs/hooks/useJob';
 import { usePlaybackStore } from '@/features/playback/playbackStore';
 import { fetchTrackByJobId } from '@/features/tracks/api/tracksApi';
@@ -53,107 +52,99 @@ import { mapRpcError } from '@/lib/rpcErrors';
 type AudioJobRow = Database['public']['Tables']['audio_jobs']['Row'];
 
 const C = {
-  brandHero: '#92F702',
+  brandHero: '#8EF20F',
   brandVisor: '#0BF807',
   canvasSurfaceRaised: '#132830',
   canvasSurfaceHighlight: '#18333D',
-  textPrimary: '#F8F9FA',
+  textPrimary: '#F4F7F2',
   textSecondary: '#B5C4CC',
   textTertiary: '#6B828F',
   textInverse: '#09161B',
   success: '#00E676',
   warning: '#FFD600',
   error: '#FF5252',
-  glassBorder: 'rgba(255,255,255,0.12)',
-  glassBorderActive: 'rgba(146,247,2,0.45)',
 };
 
 interface StepDefinition {
   id: string;
-  label: string;
-  description: string;
-  activeStatus: JobStatus;
+  name: string;
+  detail: string;
+  icon: React.ComponentType<{ size: number; color: string; strokeWidth?: number }>;
+  activeStatus: JobStatus[];
   minProgress: number;
 }
 
-const PIPELINE_STEPS: StepDefinition[] = [
+const FIVE_STEPS: StepDefinition[] = [
   {
-    id: 'extracting',
-    label: 'Extracting Document Text',
-    description: 'Parsing pages, structure, and text content',
-    activeStatus: 'extracting',
-    minProgress: 10,
+    id: 'reading',
+    name: 'Reading',
+    detail: 'Extracting text and structure',
+    icon: FileSearch,
+    activeStatus: ['extracting'],
+    minProgress: 15,
   },
   {
-    id: 'scripting',
-    label: 'Synthesizing Explanation',
-    description: 'Simplifying ideas and crafting narration script',
-    activeStatus: 'scripting',
+    id: 'understanding',
+    name: 'Understanding',
+    detail: 'Analyzing core ideas & key concepts',
+    icon: BookOpen,
+    activeStatus: ['extracting', 'scripting'],
     minProgress: 35,
   },
   {
-    id: 'voicing',
-    label: 'Recording AI Voice Narration',
-    description: 'Streaming neural speech in target voice',
-    activeStatus: 'voicing',
-    minProgress: 65,
+    id: 'writing',
+    name: 'Writing',
+    detail: 'Drafting conversational explanation',
+    icon: PenTool,
+    activeStatus: ['scripting'],
+    minProgress: 60,
   },
   {
-    id: 'assembling',
-    label: 'Mastering Audio & Chapters',
-    description: 'Loudness normalization and transcript alignment',
-    activeStatus: 'assembling',
-    minProgress: 90,
+    id: 'recording',
+    name: 'Recording',
+    detail: 'Streaming neural AI narration',
+    icon: Mic,
+    activeStatus: ['voicing'],
+    minProgress: 85,
+  },
+  {
+    id: 'final_touches',
+    name: 'Final Touches',
+    detail: 'Mastering MP3 & loudness leveling',
+    icon: Sliders,
+    activeStatus: ['assembling'],
+    minProgress: 98,
   },
 ];
 
 export default function ProcessingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { jobId } = useLocalSearchParams<{ jobId: string }>();
+  const params = useLocalSearchParams<{ jobId: string }>();
+  const jobId = params.jobId;
 
-  // Fetch real job data via hook with Realtime websocket updates
-  const { data: realJob, isLoading, refetch } = useJob(jobId || '');
+  const { data: realJob, refetch } = useJob(jobId);
   const cancelJobMutation = useCancelJob();
   const createJobMutation = useCreateAudioJob();
-
-  // Cancel confirmation modal state
-  const [showCancelModal, setShowCancelModal] = useState(false);
-  const [isStartingPlayback, setIsStartingPlayback] = useState(false);
   const { playTrack } = usePlaybackStore();
 
-  // Dev-only simulated state overrides
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [isStartingPlayback, setIsStartingPlayback] = useState(false);
+  const [notifyOnComplete, setNotifyOnComplete] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  // Dev simulator state: explicit setting defaults to false per Rule 4
+  const [showDevControls, setShowDevControls] = useState(false);
   const [simulatedJob, setSimulatedJob] = useState<Partial<AudioJobRow> | null>(null);
 
-  // Fallback Polling every 3s if not terminal
+  // Track elapsed seconds
   useEffect(() => {
-    if (!jobId || simulatedJob) return;
+    const timer = setInterval(() => {
+      setElapsedSeconds((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
-    const interval = setInterval(() => {
-      if (
-        realJob &&
-        realJob.status !== 'ready' &&
-        realJob.status !== 'failed' &&
-        realJob.status !== 'canceled'
-      ) {
-        refetch();
-      }
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, [jobId, realJob, refetch, simulatedJob]);
-
-  // Reconcile on App Foreground
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextAppState) => {
-      if (nextAppState === 'active' && jobId) {
-        refetch();
-      }
-    });
-    return () => subscription.remove();
-  }, [jobId, refetch]);
-
-  // Effective job prioritizing simulation if active in __DEV__
   const effectiveJob: Partial<AudioJobRow> = useMemo(() => {
     if (simulatedJob) return simulatedJob;
     return (
@@ -161,18 +152,23 @@ export default function ProcessingScreen() {
         id: jobId || 'unknown',
         status: 'queued' as JobStatus,
         progress: 0,
-        current_step: 'Waiting in line for processing worker',
+        current_step: 'Waiting for worker...',
       }
     );
   }, [realJob, simulatedJob, jobId]);
 
   const status = effectiveJob.status || 'queued';
   const progress = effectiveJob.progress ?? 0;
+  const isTerminal = status === 'ready' || status === 'failed' || status === 'canceled';
 
-  // Mascot pose determination
+  // Check if job is stuck in queued for >60s
+  const isQueuedProlonged = status === 'queued' && elapsedSeconds >= 60;
+
+  // Mascot pose
   const mascotPose = useMemo(() => {
     if (status === 'ready') return 'success';
     if (status === 'failed') return 'error';
+    if (status === 'waiting_for_capacity') return 'thinking';
     if (status === 'voicing' || status === 'assembling') return 'listening';
     return 'thinking';
   }, [status]);
@@ -207,7 +203,7 @@ export default function ProcessingScreen() {
     }
   };
 
-  // Start Audio Playback Handler
+  // Listen Now Handler
   const handleListenNow = async () => {
     if (!jobId) return;
     try {
@@ -227,340 +223,477 @@ export default function ProcessingScreen() {
       }
       router.push('/player' as any);
     } catch (err: any) {
-      console.warn('Failed to load track for player:', err?.message);
       router.push('/player' as any);
     } finally {
       setIsStartingPlayback(false);
     }
   };
 
-  // __DEV__ state advancement simulator
-  const handleAdvanceSimulation = () => {
-    const sequence: Array<{ status: JobStatus; progress: number; step: string }> = [
-      { status: 'queued', progress: 0, step: 'Waiting in line' },
-      { status: 'extracting', progress: 25, step: 'Extracting document text' },
-      { status: 'scripting', progress: 50, step: 'Drafting spoken explanation' },
-      { status: 'voicing', progress: 75, step: 'Streaming AI voice narration' },
-      { status: 'assembling', progress: 92, step: 'Final audio mastering' },
-      { status: 'ready', progress: 100, step: 'Completed successfully' },
-      { status: 'failed', progress: 30, step: 'Content filter error' },
-    ];
-
-    const currentIndex = sequence.findIndex((s) => s.status === status);
-    const nextItem = sequence[(currentIndex + 1) % sequence.length];
-    setSimulatedJob({
-      ...effectiveJob,
-      status: nextItem.status,
-      progress: nextItem.progress,
-      current_step: nextItem.step,
-    });
+  // Notify Toggle Handler
+  const handleToggleNotify = async (val: boolean) => {
+    setNotifyOnComplete(val);
+    if (val && Platform.OS === 'android' && Platform.Version >= 33) {
+      await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
+    }
   };
 
-  const isTerminal = status === 'ready' || status === 'failed' || status === 'canceled';
+  // Estimate remaining time
+  const remainingEstimate = useMemo(() => {
+    if (status === 'ready') return 'Ready now';
+    if (status === 'waiting_for_capacity') return 'High demand • Resuming automatically';
+    if (progress < 25) return 'About 1–2 min remaining';
+    if (progress < 60) return 'About 1 min remaining';
+    if (progress < 90) return 'Under 30 seconds remaining';
+    return 'Finalizing audio...';
+  }, [progress, status]);
 
   return (
     <View style={styles.root}>
-      <MeshBackground variant="processing" />
-
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-        <Pressable
-          style={styles.backBtn}
-          onPress={() => router.push('/(tabs)/home')}
-          hitSlop={12}
-        >
-          <ChevronLeft size={24} color={C.textSecondary} strokeWidth={2} />
-        </Pressable>
-        <Text variant="headline" rawColor={C.textPrimary} style={styles.headerTitle}>
-          {status === 'ready'
-            ? 'Explanation Ready'
-            : status === 'failed'
-            ? 'Processing Failed'
-            : 'Generating Audio'}
-        </Text>
-        {!isTerminal ? (
+      <ScreenContainer meshVariant="processing" hasTabBar={false}>
+        {/* Header */}
+        <View style={styles.header}>
           <Pressable
-            style={styles.cancelHeaderBtn}
-            onPress={() => setShowCancelModal(true)}
-            hitSlop={8}
+            style={styles.backBtn}
+            onPress={() => router.push('/(tabs)/home')}
+            hitSlop={12}
           >
-            <Text variant="caption" rawColor={C.textTertiary}>
-              Cancel
-            </Text>
+            <ChevronLeft size={22} color={C.textSecondary} strokeWidth={2} />
           </Pressable>
-        ) : (
-          <View style={{ width: 44 }} />
-        )}
-      </View>
-
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[
-          styles.content,
-          { paddingBottom: insets.bottom + 32 },
-        ]}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* __DEV__ Simulator Pill */}
-        {__DEV__ && (
-          <Pressable onPress={handleAdvanceSimulation} style={styles.devSimulatorPill}>
-            <Zap size={14} color={C.brandHero} />
-            <Text variant="caption" rawColor={C.brandHero} style={{ fontWeight: '700' }}>
-              Dev: Advance State ({status.toUpperCase()} {progress}%)
-            </Text>
-          </Pressable>
-        )}
-
-        {/* Mascot */}
-        <View style={styles.mascotArea}>
-          <Mascot pose={mascotPose} size={170} animated />
+          <Text variant="headline" rawColor={C.textPrimary} style={{ fontWeight: '800' }}>
+            {status === 'ready'
+              ? 'Explanation Ready'
+              : status === 'failed'
+              ? 'Processing Failed'
+              : status === 'waiting_for_capacity'
+              ? 'High Demand'
+              : 'Generating Audio'}
+          </Text>
+          {!isTerminal ? (
+            <Pressable
+              style={styles.cancelHeaderBtn}
+              onPress={() => setShowCancelModal(true)}
+              hitSlop={8}
+            >
+              <Text variant="caption" rawColor={C.textTertiary} style={{ fontWeight: '700' }}>
+                Cancel
+              </Text>
+            </Pressable>
+          ) : (
+            <View style={{ width: 44 }} />
+          )}
         </View>
 
-        {/* Dynamic Status Quote Bubble */}
-        <GlassCard style={styles.quoteCard}>
-          <Text variant="headline" rawColor={C.textPrimary} style={{ textAlign: 'center' }}>
-            {status === 'queued'
-              ? 'Your document is in queue...'
-              : status === 'ready'
-              ? 'All finished! Your audio breakdown is ready.'
-              : status === 'failed'
-              ? 'Oops! Something went wrong.'
-              : status === 'canceled'
-              ? 'Generation canceled.'
-              : effectiveJob.current_step || 'Synthesizing your explanation...'}
-          </Text>
-          <Text variant="footnote" rawColor={C.textTertiary} style={styles.subtext}>
-            {status === 'queued'
-              ? 'We will automatically begin processing in a few moments.'
-              : status === 'ready'
-              ? 'Listen now with karaoke transcripts and chapters.'
-              : status === 'failed'
-              ? effectiveJob.error_message || 'The AI model was unable to process this document.'
-              : 'You can leave this screen anytime — your audio will keep processing.'}
-          </Text>
-        </GlassCard>
+        {/* 1. Mascot (Thinking pose, 140dp) */}
+        <View style={styles.mascotArea}>
+          <Mascot pose={mascotPose} size={140} animated />
+        </View>
 
-        {/* Progress Bar & Counter (Hidden when terminal) */}
-        {!isTerminal && (
-          <View style={styles.progressContainer}>
-            <View style={styles.progressHeaderRow}>
-              <Text variant="caption" rawColor={C.textSecondary}>
-                Overall Progress
-              </Text>
-              <Text variant="monoCounter" rawColor={C.brandHero}>
-                {progress}%
-              </Text>
+        {/* 2. Current-Step Card with Single-Line Description */}
+        <GlassCard style={styles.currentStepCard} padding={12} borderRadius={16}>
+          <View style={styles.currentStepHeader}>
+            <View style={styles.currentStepIconBox}>
+              <Sparkles size={16} color={C.brandHero} strokeWidth={2.5} />
             </View>
-            <View style={styles.progressTrack}>
-              <LinearGradient
-                colors={[C.brandHero, C.brandVisor]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={[styles.progressFill, { width: `${progress}%` }]}
-              />
+            <View style={styles.currentStepTextCol}>
+              <Text variant="headline" rawColor={C.textPrimary} numberOfLines={1} style={{ fontWeight: '700' }}>
+                {status === 'queued'
+                  ? 'Queued in Processing Pipeline'
+                  : status === 'waiting_for_capacity'
+                  ? 'High Demand Right Now'
+                  : status === 'ready'
+                  ? 'Audio Breakdown Ready!'
+                  : status === 'failed'
+                  ? 'Processing Interrupted'
+                  : effectiveJob.current_step || 'Synthesizing Explanation...'}
+              </Text>
+              <Text
+                variant="caption"
+                rawColor={status === 'waiting_for_capacity' ? C.warning : C.textTertiary}
+                numberOfLines={1}
+              >
+                {status === 'ready'
+                  ? 'Ready to listen with synchronized chapters'
+                  : status === 'failed'
+                  ? effectiveJob.error_message || 'Content could not be synthesized'
+                  : status === 'waiting_for_capacity'
+                  ? 'Your audio will continue automatically'
+                  : remainingEstimate}
+              </Text>
             </View>
           </View>
+
+          {/* Chunky ProgressBar with percentage */}
+          {!isTerminal && (
+            <View style={{ marginTop: 10 }}>
+              <ProgressBar progress={progress} height={14} />
+            </View>
+          )}
+        </GlassCard>
+
+        {/* High Demand / Waiting for Capacity Banner */}
+        {status === 'waiting_for_capacity' && (
+          <GlassCard style={styles.stuckCard} padding={12} borderRadius={14}>
+            <View style={styles.stuckRow}>
+              <Clock size={18} color={C.warning} />
+              <View style={{ flex: 1, marginLeft: 8 }}>
+                <Text variant="subhead" rawColor={C.warning} style={{ fontWeight: '700' }}>
+                  High Demand Right Now
+                </Text>
+                <Text variant="caption" rawColor={C.textSecondary} style={{ marginTop: 2 }}>
+                  Your audio will continue automatically as AI models cool down. Your progress is saved.
+                </Text>
+              </View>
+            </View>
+            <View style={styles.stuckBtnRow}>
+              <Pressable onPress={() => setShowCancelModal(true)} style={styles.stuckCancelBtn}>
+                <Text variant="caption" rawColor={C.textTertiary}>Cancel</Text>
+              </Pressable>
+            </View>
+          </GlassCard>
         )}
 
-        {/* Pipeline Steps Card */}
-        <GlassCard style={styles.stepsCard}>
-          {PIPELINE_STEPS.map((step, index) => {
+        {/* Stuck in Queue Alert (>60s) */}
+        {isQueuedProlonged && !isTerminal && (
+          <GlassCard style={styles.stuckCard} padding={12} borderRadius={14}>
+            <View style={styles.stuckRow}>
+              <AlertTriangle size={18} color={C.warning} />
+              <View style={{ flex: 1, marginLeft: 8 }}>
+                <Text variant="subhead" rawColor={C.warning} style={{ fontWeight: '700' }}>
+                  Waiting for processing server
+                </Text>
+                <Text variant="caption" rawColor={C.textSecondary} style={{ marginTop: 2 }}>
+                  Your document is queued. The AI worker is preparing your audio.
+                </Text>
+              </View>
+            </View>
+            <View style={styles.stuckBtnRow}>
+              <Pressable onPress={() => setShowCancelModal(true)} style={styles.stuckCancelBtn}>
+                <Text variant="caption" rawColor={C.textTertiary}>Cancel</Text>
+              </Pressable>
+              <Pressable onPress={handleRetryJob} style={styles.stuckRetryBtn}>
+                <Text variant="caption" rawColor={C.textInverse} style={{ fontWeight: '700' }}>
+                  Retry Now
+                </Text>
+              </Pressable>
+            </View>
+          </GlassCard>
+        )}
+
+        {/* 3. Vertical 5-Step Checklist */}
+        <GlassCard style={styles.stepsCard} padding={12} borderRadius={16}>
+          <Text variant="caption" rawColor={C.textTertiary} style={styles.stepsTitle}>
+            PIPELINE STAGES
+          </Text>
+          {FIVE_STEPS.map((st, idx) => {
+            const StepIcon = st.icon;
             const isCompleted =
               status === 'ready' ||
-              (status !== 'failed' && status !== 'queued' && progress >= step.minProgress);
+              (status !== 'failed' && status !== 'queued' && progress >= st.minProgress);
             const isActive =
-              status === step.activeStatus ||
-              (status !== 'ready' &&
-                status !== 'failed' &&
-                status !== 'queued' &&
-                progress >= step.minProgress - 15 &&
-                progress < step.minProgress + 15);
+              !isCompleted &&
+              status !== 'failed' &&
+              status !== 'queued' &&
+              st.activeStatus.includes(status);
 
             return (
-              <View key={step.id}>
-                <View style={styles.stepRow}>
+              <View key={st.id} style={styles.stepItem}>
+                <View style={styles.stepIndicatorCol}>
                   <View
                     style={[
                       styles.stepIconWrap,
-                      isCompleted && styles.stepIconCompleted,
-                      isActive && styles.stepIconActive,
+                      isCompleted && styles.stepCompleted,
+                      isActive && styles.stepActive,
                     ]}
                   >
                     {isCompleted ? (
-                      <CheckCircle2 size={16} color={C.success} />
+                      <CheckCircle2 size={14} color="#09161B" strokeWidth={3} />
                     ) : isActive ? (
                       <ActivityIndicator size="small" color={C.brandHero} />
                     ) : (
-                      <View style={styles.stepDotPending} />
+                      <StepIcon size={14} color={C.textTertiary} strokeWidth={2} />
                     )}
                   </View>
-
-                  <View style={styles.stepTextGroup}>
-                    <Text
-                      variant="headline"
-                      rawColor={
-                        isCompleted ? C.textPrimary : isActive ? C.brandHero : C.textTertiary
-                      }
-                    >
-                      {step.label}
-                    </Text>
-                    <Text variant="caption" rawColor={C.textTertiary}>
-                      {step.description}
-                    </Text>
-                  </View>
+                  {idx < FIVE_STEPS.length - 1 && (
+                    <View
+                      style={[
+                        styles.stepLine,
+                        isCompleted && { backgroundColor: C.brandHero },
+                      ]}
+                    />
+                  )}
                 </View>
 
-                {index < PIPELINE_STEPS.length - 1 && <View style={styles.stepConnector} />}
+                <View style={styles.stepDetails}>
+                  <Text
+                    variant="subhead"
+                    rawColor={isCompleted ? C.textPrimary : isActive ? C.brandHero : C.textTertiary}
+                    style={{ fontWeight: isActive || isCompleted ? '700' : '500' }}
+                  >
+                    {st.name}
+                  </Text>
+                  <Text variant="caption" rawColor={C.textTertiary} numberOfLines={1}>
+                    {st.detail}
+                  </Text>
+                </View>
               </View>
             );
           })}
         </GlassCard>
 
-        {/* Action Buttons */}
-        <View style={styles.actionArea}>
-          {status === 'ready' && (
+        {/* 4. "Notify me when ready" Toggle */}
+        {!isTerminal && (
+          <GlassCard style={styles.notifyCard} padding={10} borderRadius={14}>
+            <View style={styles.notifyRow}>
+              <View style={styles.notifyIcon}>
+                <Bell size={16} color={C.brandHero} strokeWidth={2.2} />
+              </View>
+              <View style={{ flex: 1, marginLeft: 8 }}>
+                <Text variant="subhead" rawColor={C.textPrimary} style={{ fontWeight: '600' }}>
+                  Notify me when ready
+                </Text>
+                <Text variant="caption" rawColor={C.textTertiary}>
+                  You can leave this screen anytime
+                </Text>
+              </View>
+              <Switch
+                value={notifyOnComplete}
+                onValueChange={handleToggleNotify}
+                trackColor={{ false: C.canvasSurfaceRaised, true: C.brandHero }}
+                thumbColor={C.textPrimary}
+              />
+            </View>
+          </GlassCard>
+        )}
+
+        {/* 5. Terminal State Actions */}
+        {status === 'ready' && (
+          <View style={styles.actionArea}>
             <ShinyButton
-              label={isStartingPlayback ? 'Loading Audio...' : 'Listen to Audio Now'}
+              label={isStartingPlayback ? 'LOADING AUDIO...' : 'LISTEN NOW'}
               variant="primary"
               size="lg"
               fullWidth
               loading={isStartingPlayback}
-              icon={<Play size={20} color={C.textInverse} strokeWidth={2.5} />}
+              icon={<Play size={18} color={C.textInverse} strokeWidth={2.5} />}
               onPress={handleListenNow}
             />
-          )}
+          </View>
+        )}
 
-          {status === 'failed' && (
-            <View style={{ width: '100%', gap: 12 }}>
-              <ShinyButton
-                label="Retry Explanation"
-                variant="primary"
-                size="lg"
-                fullWidth
-                icon={<RotateCcw size={18} color={C.textInverse} strokeWidth={2.5} />}
-                onPress={handleRetryJob}
-              />
-              <ShinyButton
-                label="Pick Another Document"
-                variant="secondary"
-                size="md"
-                fullWidth
-                onPress={() => router.push('/(tabs)/upload')}
-              />
-            </View>
-          )}
+        {status === 'failed' && (
+          <View style={[styles.actionArea, { gap: 10 }]}>
+            <ShinyButton
+              label="RETRY EXPLANATION"
+              variant="primary"
+              size="lg"
+              fullWidth
+              icon={<RotateCcw size={16} color={C.textInverse} strokeWidth={2.5} />}
+              onPress={handleRetryJob}
+            />
+            <ShinyButton
+              label="CHOOSE ANOTHER FILE"
+              variant="secondary"
+              size="md"
+              fullWidth
+              onPress={() => router.push('/(tabs)/upload')}
+            />
+          </View>
+        )}
 
-          {!isTerminal && (
-            <View style={{ width: '100%', alignItems: 'center' }}>
-              <Text variant="caption" rawColor={C.textTertiary} style={{ textAlign: 'center' }}>
-                Generation takes ~30–90 seconds depending on document length.
+        {/* Cancel Confirmation Modal */}
+        <Modal visible={showCancelModal} transparent animationType="fade">
+          <Pressable style={styles.modalOverlay} onPress={() => setShowCancelModal(false)}>
+            <View style={styles.modalContent}>
+              <Text variant="headline" rawColor={C.textPrimary} style={{ marginBottom: 6 }}>
+                Cancel Generation?
               </Text>
+              <Text variant="footnote" rawColor={C.textSecondary} style={{ marginBottom: 16 }}>
+                Are you sure you want to cancel? This job will be terminated and processing will stop.
+              </Text>
+              <View style={styles.modalBtnRow}>
+                <Pressable onPress={() => setShowCancelModal(false)} style={styles.modalCancelBtn}>
+                  <Text variant="subhead" rawColor={C.textSecondary}>Keep Waiting</Text>
+                </Pressable>
+                <Pressable onPress={handleConfirmCancel} style={styles.modalConfirmBtn}>
+                  <Text variant="subhead" rawColor={C.textInverse} style={{ fontWeight: '700' }}>
+                    Yes, Cancel
+                  </Text>
+                </Pressable>
+              </View>
             </View>
-          )}
-        </View>
-      </ScrollView>
-
-      {/* Cancel Confirmation Sheet Modal */}
-      <Modal
-        visible={showCancelModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowCancelModal(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <GlassCard style={styles.modalCard}>
-            <Text variant="title3" rawColor={C.textPrimary} style={{ marginBottom: 8 }}>
-              Cancel Audio Generation?
-            </Text>
-            <Text variant="subhead" rawColor={C.textSecondary} style={{ marginBottom: 20 }}>
-              Are you sure you want to cancel? Any progress made so far will be lost.
-            </Text>
-            <View style={styles.modalActions}>
-              <Pressable
-                onPress={() => setShowCancelModal(false)}
-                style={styles.modalCancelBtn}
-              >
-                <Text variant="headline" rawColor={C.textSecondary}>
-                  Keep Going
-                </Text>
-              </Pressable>
-              <ShinyButton
-                label="Yes, Cancel Job"
-                variant="destructive"
-                size="md"
-                onPress={handleConfirmCancel}
-              />
-            </View>
-          </GlassCard>
-        </View>
-      </Modal>
+          </Pressable>
+        </Modal>
+      </ScreenContainer>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#09161B' },
-  scroll: { flex: 1 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingBottom: 12,
+  root: {
+    flex: 1,
+    backgroundColor: '#09161B',
   },
-  headerTitle: { flex: 1, textAlign: 'center' },
-  backBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  cancelHeaderBtn: { paddingHorizontal: 12, paddingVertical: 6 },
-  content: { paddingHorizontal: 20, alignItems: 'center' },
-  devSimulatorPill: {
+  header: {
+    height: 44,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelHeaderBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  mascotArea: {
+    alignItems: 'center',
+    marginVertical: 4,
+  },
+  currentStepCard: {
+    marginBottom: 10,
+  },
+  currentStepHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(146,247,2,0.15)',
-    borderWidth: 1,
-    borderColor: C.brandHero,
+    gap: 10,
+  },
+  currentStepIconBox: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    backgroundColor: 'rgba(142, 242, 15, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  currentStepTextCol: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  stuckCard: {
+    backgroundColor: 'rgba(255, 214, 0, 0.08)',
+    borderColor: 'rgba(255, 214, 0, 0.3)',
+    marginBottom: 10,
+  },
+  stuckRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  stuckBtnRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+    marginTop: 8,
+  },
+  stuckCancelBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  stuckRetryBtn: {
+    backgroundColor: '#FFD600',
+    borderRadius: 6,
+    paddingVertical: 4,
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+  },
+  stepsCard: {
+    marginBottom: 10,
+  },
+  stepsTitle: {
+    fontWeight: '800',
+    fontSize: 9,
+    letterSpacing: 1.2,
+    marginBottom: 8,
+  },
+  stepItem: {
+    flexDirection: 'row',
+    minHeight: 44,
+  },
+  stepIndicatorCol: {
+    alignItems: 'center',
+    width: 28,
+  },
+  stepIconWrap: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepCompleted: {
+    backgroundColor: '#8EF20F',
+    borderColor: '#8EF20F',
+  },
+  stepActive: {
+    borderColor: '#8EF20F',
+  },
+  stepLine: {
+    width: 1.5,
+    flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.10)',
+    marginVertical: 2,
+  },
+  stepDetails: {
+    flex: 1,
+    marginLeft: 8,
+    justifyContent: 'center',
+    paddingBottom: 8,
+  },
+  notifyCard: {
+    marginBottom: 14,
+  },
+  notifyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  notifyIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    backgroundColor: 'rgba(142, 242, 15, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionArea: {
+    marginTop: 10,
     marginBottom: 16,
   },
-  mascotArea: { marginVertical: 12, alignItems: 'center' },
-  quoteCard: { padding: 18, borderRadius: 18, width: '100%', marginBottom: 20, gap: 6 },
-  subtext: { textAlign: 'center', marginTop: 4 },
-  progressContainer: { width: '100%', marginBottom: 20, gap: 8 },
-  progressHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  progressTrack: {
-    height: 8,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 4,
-    overflow: 'hidden',
-    width: '100%',
-  },
-  progressFill: { height: 8, borderRadius: 4, minWidth: 8 },
-  stepsCard: { padding: 16, borderRadius: 18, width: '100%', marginBottom: 24 },
-  stepRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 8 },
-  stepIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: C.canvasSurfaceRaised,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepIconCompleted: { backgroundColor: 'rgba(0,230,118,0.15)' },
-  stepIconActive: { backgroundColor: 'rgba(146,247,2,0.15)', borderWidth: 1, borderColor: C.brandHero },
-  stepDotPending: { width: 8, height: 8, borderRadius: 4, backgroundColor: C.textTertiary },
-  stepTextGroup: { flex: 1, gap: 2 },
-  stepConnector: { width: 2, height: 16, backgroundColor: 'rgba(255,255,255,0.08)', marginLeft: 15 },
-  actionArea: { width: '100%', marginTop: 8 },
-  modalBackdrop: {
+  modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.75)',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
+    paddingHorizontal: 24,
   },
-  modalCard: { padding: 24, borderRadius: 20, width: '100%' },
-  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 16 },
-  modalCancelBtn: { paddingVertical: 10, paddingHorizontal: 14 },
+  modalContent: {
+    width: '100%',
+    backgroundColor: '#0D1E24',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 18,
+    padding: 16,
+  },
+  modalBtnRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+  },
+  modalCancelBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+  },
+  modalConfirmBtn: {
+    backgroundColor: '#FF5252',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
 });

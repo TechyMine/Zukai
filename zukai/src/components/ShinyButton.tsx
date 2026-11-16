@@ -30,6 +30,7 @@ import Animated, {
   withTiming,
   withDelay,
   withSequence,
+  cancelAnimation,
   interpolate,
   Extrapolation,
   runOnJS,
@@ -64,12 +65,12 @@ export interface ShinyButtonProps {
   fullWidth?: boolean;
 }
 
-// ─── Size Tokens ─────────────────────────────────────────────────────────────
+// ─── Size Tokens (Compact EdTech Specification) ─────────────────────────────
 
 const SIZE_MAP: Record<ButtonSize, { height: number; paddingH: number; fontSize: number; iconSize: number }> = {
-  sm: { height: 40, paddingH: 16, fontSize: 14, iconSize: 16 },
-  md: { height: 52, paddingH: 24, fontSize: 16, iconSize: 18 },
-  lg: { height: 60, paddingH: 32, fontSize: 17, iconSize: 20 },
+  sm: { height: 36, paddingH: 14, fontSize: 13, iconSize: 15 },
+  md: { height: 44, paddingH: 18, fontSize: 14, iconSize: 16 },
+  lg: { height: 52, paddingH: 22, fontSize: 15, iconSize: 18 },
 };
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -96,7 +97,7 @@ export function ShinyButton({
 
   // ── Animation Values ────────────────────────────────────────────────────
   const pressScale = useSharedValue(1);
-  const shimmerX = useSharedValue(-120);
+  const shimmerX = useSharedValue(-150);
 
   // Press spring animation
   const animatedContainer = useAnimatedStyle(() => ({
@@ -108,24 +109,27 @@ export function ShinyButton({
     transform: [{ translateX: shimmerX.value }],
   }));
 
-  // Start idle shimmer loop
+  // Start idle shimmer loop with proper bounds and cleanup
   useEffect(() => {
-    if (!runShimmer || disabled) return;
+    if (!runShimmer || disabled) {
+      shimmerX.value = -150;
+      cancelAnimation(shimmerX);
+      return;
+    }
 
-    const startShimmer = () => {
-      shimmerX.value = withDelay(
-        4000,
-        withRepeat(
-          withSequence(
-            withTiming(300, { duration: 1200 }),
-            withTiming(-120, { duration: 0 }),
-          ),
-          -1,
-          false,
-        ),
-      );
+    shimmerX.value = -150;
+    shimmerX.value = withRepeat(
+      withSequence(
+        withTiming(550, { duration: 1300 }),
+        withDelay(3200, withTiming(-150, { duration: 50 }))
+      ),
+      -1,
+      false,
+    );
+
+    return () => {
+      cancelAnimation(shimmerX);
     };
-    startShimmer();
   }, [runShimmer, disabled, shimmerX]);
 
   // ── Handlers ─────────────────────────────────────────────────────────────
@@ -209,7 +213,7 @@ export function ShinyButton({
           styles.pressable,
           {
             height: isIcon ? sizeToken.height : sizeToken.height,
-            width: isIcon ? sizeToken.height : undefined,
+            width: isIcon ? sizeToken.height : fullWidth ? '100%' : undefined,
             borderRadius: isIcon ? sizeToken.height / 2 : br,
             overflow: 'hidden',
             opacity: disabled ? 0.4 : 1,
@@ -237,6 +241,21 @@ export function ShinyButton({
             },
           ]}
         />
+
+        {/* Layer 3b: Tactile 3D Bottom Edge */}
+        {isPrimary && (
+          <View
+            pointerEvents="none"
+            style={[
+              StyleSheet.absoluteFill,
+              {
+                borderBottomWidth: 3,
+                borderBottomColor: '#63B300',
+                borderRadius: isIcon ? sizeToken.height / 2 : br,
+              },
+            ]}
+          />
+        )}
 
         {/* Layer 4: Gloss Top Half-Pill */}
         {isPrimary && (
@@ -288,9 +307,13 @@ export function ShinyButton({
                 <Text
                   variant="callout"
                   rawColor={textColor}
-                  style={{ fontWeight: '600', fontSize: sizeToken.fontSize }}
+                  style={{
+                    fontWeight: isPrimary ? '800' : '600',
+                    fontSize: sizeToken.fontSize,
+                    letterSpacing: isPrimary ? 0.8 : 0,
+                  }}
                 >
-                  {label}
+                  {isPrimary ? label.toUpperCase() : label}
                 </Text>
               )}
               {icon && iconPosition === 'right' && (

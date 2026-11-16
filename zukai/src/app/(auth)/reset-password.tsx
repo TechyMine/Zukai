@@ -266,12 +266,14 @@ export default function ResetPasswordScreen() {
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#09161B' },
-  content: { paddingHorizontal: 24, alignItems: 'center' },
+  content: { width: '100%', paddingHorizontal: 24, alignItems: 'center' },
   logo: { fontSize: 28, fontWeight: '800', letterSpacing: 4, textAlign: 'center', marginBottom: 24 },
-  card: { width: '100%', padding: 24, borderRadius: 24, gap: 14 },
+  card: { width: '100%', alignSelf: 'stretch', padding: 24, borderRadius: 24, gap: 14 },
   cardTitle: { textAlign: 'center' },
   cardSub: { textAlign: 'center', marginBottom: 4, lineHeight: 20 },
   errorBanner: {
+    width: '100%',
+    alignSelf: 'stretch',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -281,8 +283,10 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.error,
   },
-  fieldGroup: { width: '100%', gap: 4 },
+  fieldGroup: { width: '100%', alignSelf: 'stretch', gap: 4 },
   inputWrap: {
+    width: '100%',
+    alignSelf: 'stretch',
     backgroundColor: C.glassSurface,
     borderWidth: 1,
     borderColor: C.glassBorder,
@@ -293,9 +297,11 @@ const s = StyleSheet.create({
     paddingHorizontal: 14,
     gap: 10,
   },
-  input: { flex: 1, color: '#F8F9FA', fontSize: 15 },
+  input: { flex: 1, minWidth: 0, color: '#F8F9FA', fontSize: 15 },
   inlineError: { paddingLeft: 4, marginTop: 2 },
   strengthMeter: {
+    width: '100%',
+    alignSelf: 'stretch',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,

@@ -5,6 +5,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { fetchLibraryItems, LibraryItem } from '../api/libraryApi';
+export type { LibraryItem };
 
 export const libraryKeys = {
   all: ['library'] as const,

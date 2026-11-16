@@ -153,6 +153,44 @@ export async function processJob(job) {
     }
 }
 /**
+ * Worker-side reaper for jobs stuck in a running/non-terminal state.
+ * Visibility timeout expiry re-queues jobs (up to MAX_RETRIES), then marks them failed.
+ */
+export async function reapStuckJobs() {
+    try {
+        const timeoutMs = config.VISIBILITY_TIMEOUT_SECONDS * 1000;
+        const cutoffDate = new Date(Date.now() - timeoutMs).toISOString();
+        const { data: stuckJobs, error } = await supabaseAdmin
+            .from('audio_jobs')
+            .select('id, attempt_count, status')
+            .in('status', ['extracting', 'scripting', 'voicing', 'assembling'])
+            .lt('updated_at', cutoffDate);
+        if (error || !stuckJobs || stuckJobs.length === 0)
+            return;
+        for (const job of stuckJobs) {
+            const attempts = job.attempt_count ?? 1;
+            if (attempts >= config.MAX_RETRIES) {
+                logger.warn({ jobId: job.id, attempts }, 'Reaper: Job exceeded max retries, marking as failed');
+                await failJob(job.id, 'TIMEOUT', 'Processing timed out after maximum retry attempts.');
+            }
+            else {
+                logger.info({ jobId: job.id, attempts }, 'Reaper: Resetting stuck job back to queued');
+                await supabaseAdmin
+                    .from('audio_jobs')
+                    .update({
+                    status: 'queued',
+                    error_code: 'REQUEUED_TIMEOUT',
+                    error_message: 'Previous worker processing timed out; automatically re-queued.',
+                })
+                    .eq('id', job.id);
+            }
+        }
+    }
+    catch (err) {
+        logger.error({ err: err.message }, 'Error running reapStuckJobs');
+    }
+}
+/**
  * Worker polling loop with concurrency limiter and exponential backoff
  */
 export async function startWorkerLoop() {
@@ -161,7 +199,13 @@ export async function startWorkerLoop() {
     isRunning = true;
     shouldStop = false;
     logger.info({ concurrency: config.CONCURRENCY }, 'Worker polling loop started');
+    let lastReapTime = Date.now();
     while (!shouldStop) {
+        // Run reaper every 30 seconds
+        if (Date.now() - lastReapTime > 30000) {
+            lastReapTime = Date.now();
+            reapStuckJobs().catch((err) => logger.warn({ err }, 'Background reaper error'));
+        }
         if (activeJobCount >= config.CONCURRENCY) {
             await new Promise((r) => setTimeout(r, 1000));
             continue;

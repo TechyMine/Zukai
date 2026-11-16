@@ -6,6 +6,7 @@
 
 export type RpcErrorCode =
   | 'QUOTA_EXCEEDED'
+  | 'CAPACITY_EXHAUSTED'
   | 'TOO_MANY_JOBS'
   | 'DOCUMENT_NOT_READY'
   | 'DOCUMENT_DELETED'
@@ -60,6 +61,20 @@ export function mapRpcError(rawError: unknown): UserFriendlyError {
       message: 'You have consumed all your monthly audio explanation minutes. Upgrade to keep generating audio.',
       actionLabel: 'Upgrade Plan',
       isRetryable: false,
+    };
+  }
+
+  if (
+    errorMessage.includes('CAPACITY_EXHAUSTED') ||
+    errorMessage.includes('waiting_for_capacity') ||
+    errorMessage.includes('AI_UNAVAILABLE')
+  ) {
+    return {
+      code: 'CAPACITY_EXHAUSTED',
+      title: 'High AI Demand',
+      message: 'AI models are temporarily at quota capacity. Your job will resume automatically when limits clear.',
+      actionLabel: 'Hold in Queue',
+      isRetryable: true,
     };
   }
 

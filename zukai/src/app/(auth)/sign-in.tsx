@@ -326,6 +326,7 @@ const s = StyleSheet.create({
     backgroundColor: '#071216',
   },
   content: {
+    width: '100%',
     paddingHorizontal: 22,
     alignItems: 'center',
   },
@@ -340,8 +341,10 @@ const s = StyleSheet.create({
   },
   card: {
     width: '100%',
+    alignSelf: 'stretch',
   },
   cardHeader: {
+    width: '100%',
     alignItems: 'center',
     marginBottom: 24,
   },
@@ -354,6 +357,8 @@ const s = StyleSheet.create({
     textAlign: 'center',
   },
   errorBanner: {
+    width: '100%',
+    alignSelf: 'stretch',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
@@ -367,10 +372,12 @@ const s = StyleSheet.create({
   },
   formFields: {
     width: '100%',
+    alignSelf: 'stretch',
     marginBottom: 24,
   },
   fieldBlock: {
     width: '100%',
+    alignSelf: 'stretch',
     marginBottom: 20,
   },
   fieldLabel: {
@@ -380,6 +387,8 @@ const s = StyleSheet.create({
     paddingLeft: 2,
   },
   inputContainer: {
+    width: '100%',
+    alignSelf: 'stretch',
     backgroundColor: C.fieldBg,
     borderWidth: 1.5,
     borderColor: C.borderDefault,
@@ -399,6 +408,7 @@ const s = StyleSheet.create({
   },
   input: {
     flex: 1,
+    minWidth: 0,
     height: '100%',
     color: '#FFFFFF',
     fontSize: 16,
@@ -417,15 +427,20 @@ const s = StyleSheet.create({
     marginTop: 6,
   },
   forgotRow: {
-    alignSelf: 'flex-end',
+    width: '100%',
+    alignItems: 'flex-end',
     marginTop: -4,
     marginBottom: 4,
   },
   signInBtn: {
+    width: '100%',
+    alignSelf: 'stretch',
     height: 56,
     marginBottom: 20,
   },
   dividerRow: {
+    width: '100%',
+    alignSelf: 'stretch',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -440,6 +455,8 @@ const s = StyleSheet.create({
     letterSpacing: 0.8,
   },
   googleBtn: {
+    width: '100%',
+    alignSelf: 'stretch',
     height: 52,
   },
   footerRow: {

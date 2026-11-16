@@ -57,6 +57,8 @@ export default function RootLayout() {
                 <Stack.Screen name="player" options={{ presentation: 'modal' }} />
                 <Stack.Screen name="paywall" options={{ presentation: 'modal' }} />
                 <Stack.Screen name="processing/[jobId]" />
+                <Stack.Screen name="history" />
+                <Stack.Screen name="downloads" />
                 <Stack.Screen name="document/[id]" />
                 <Stack.Screen name="gallery" />
               </Stack>

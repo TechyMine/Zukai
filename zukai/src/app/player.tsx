@@ -1,7 +1,7 @@
 /**
  * ZUKAI — Full-Screen Audio Player Modal
  * Location: /zukai/src/app/player.tsx
- * Description: Interactive audio player with expo-av playback, waveform visualization,
+ * Description: Interactive audio player with expo-audio playback, waveform visualization,
  *              karaoke-synced transcripts, chapter jumping, and speed selection.
  */
 

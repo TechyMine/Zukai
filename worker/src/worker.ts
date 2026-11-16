@@ -12,6 +12,8 @@ import { generateExplanationScript, PROMPT_VERSION } from './intelligence/script
 import { synthesizeSpeech } from './synthesis/ttsEngine.js';
 import { mapErrorToCode, WorkerError, WORKER_ERROR_CODES } from './errors.js';
 import { logger } from './logger.js';
+import { computeSha256, findReusableTrack, saveArtifact, getArtifact } from './ai/artifactManager.js';
+import { CapacityExhaustedError } from './ai/router.js';
 
 let isRunning = false;
 let activeJobCount = 0;
@@ -33,6 +35,7 @@ async function isJobCanceled(jobId: string): Promise<boolean> {
 /**
  * Single job lifecycle state machine:
  * queued -> extracting (0-20) -> scripting (20-55) -> voicing (55-90) -> assembling (90-98) -> ready (100)
+ * With automatic content-hash reuse, resumability from artifacts, and capacity exhaustion pause.
  */
 export async function processJob(job: ClaimedJob): Promise<void> {
   logger.info({ jobId: job.job_id, docId: job.document_id, language: job.language, depth: job.depth }, 'Claimed audio job');
@@ -69,6 +72,47 @@ export async function processJob(job: ClaimedJob): Promise<void> {
     const arrayBuffer = await fileBlob.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
+    // Compute SHA-256 for server-side deduplication
+    const contentSha256 = computeSha256(buffer);
+    await supabaseAdmin
+      .from('documents')
+      .update({ content_sha256: contentSha256 })
+      .eq('id', job.document_id);
+
+    // Content-hash reuse: check if identical file was already converted for this user/org
+    const reusable = await findReusableTrack(
+      job.owner_id,
+      job.org_id,
+      contentSha256,
+      job.language,
+      job.depth,
+      job.voice
+    );
+
+    if (reusable) {
+      logger.info({ jobId: job.job_id, trackId: reusable.trackId }, 'Reusing existing audio track via SHA-256 match');
+      const { data: existingTrack } = await supabaseAdmin
+        .from('audio_tracks')
+        .select('*')
+        .eq('id', reusable.trackId)
+        .single();
+
+      if (existingTrack) {
+        await completeJob({
+          jobId: job.job_id,
+          storagePath: existingTrack.storage_path,
+          durationSeconds: existingTrack.duration_seconds,
+          format: existingTrack.format,
+          bitrateKbps: existingTrack.bitrate_kbps,
+          fileSizeBytes: existingTrack.file_size_bytes,
+          chapters: [],
+          transcripts: { language: job.language, segments: [], full_text: '' },
+          geminiCostMicros: 0,
+        });
+        return;
+      }
+    }
+
     await heartbeatJob(job.job_id, 18, 'Extracting and cleaning text sections');
 
     const extracted = await extractDocumentContent(
@@ -101,7 +145,8 @@ export async function processJob(job: ClaimedJob): Promise<void> {
       combinedText,
       job.language,
       job.depth,
-      originalFilename
+      originalFilename,
+      job.job_id
     );
 
     await heartbeatJob(job.job_id, 50, 'Drafting punchy spoken sentences and takeaways');
@@ -113,13 +158,18 @@ export async function processJob(job: ClaimedJob): Promise<void> {
 
     await heartbeatJob(job.job_id, 65, 'Synthesizing voice narration and sentence timestamps');
 
-    const audioResult = await synthesizeSpeech(script.chapters, job.voice, {
-      title: `Lesson: ${job.document_storage_path.split('/').pop() || 'Explanation'}`,
-      artist: 'Zukai',
-      album: 'Zukai Audio',
-      language: job.language,
-      bitrateKbps: 96,
-    });
+    const audioResult = await synthesizeSpeech(
+      script.chapters,
+      job.voice,
+      {
+        title: `Lesson: ${job.document_storage_path.split('/').pop() || 'Explanation'}`,
+        artist: 'Zukai',
+        album: 'Zukai Audio',
+        language: job.language,
+        bitrateKbps: 96,
+      },
+      job.job_id
+    );
 
     // Stage 4: Assembling & Mastering (progress 90 - 98)
     if (await isJobCanceled(job.job_id)) {
@@ -152,6 +202,24 @@ export async function processJob(job: ClaimedJob): Promise<void> {
       );
     }
 
+    // Record accounting metadata
+    const allModelsUsed = [
+      ...(script.modelsUsed || []),
+      ...(audioResult.modelsUsed || []),
+    ];
+
+    await supabaseAdmin
+      .from('audio_jobs')
+      .update({
+        models_used: allModelsUsed,
+        tokens_used: {
+          inputTokens: script.inputTokens,
+          outputTokens: script.outputTokens,
+          totalWords: script.totalWords,
+        },
+      })
+      .eq('id', job.job_id);
+
     // Stage 5: Ready (progress 100)
     await completeJob({
       jobId: job.job_id,
@@ -159,44 +227,47 @@ export async function processJob(job: ClaimedJob): Promise<void> {
       durationSeconds: audioResult.durationSeconds,
       format: audioResult.format,
       bitrateKbps: audioResult.bitrateKbps,
-      fileSizeBytes: audioResult.fileSizeBytes,
+      fileSizeBytes: audioResult.audioBuffer.length,
       chapters: audioResult.chapters,
-      transcripts: audioResult.transcripts,
-      inputTokens: script.inputTokens,
-      outputTokens: script.outputTokens,
-      ttsCharacters: script.chapters.reduce((sum, c) => sum + c.text.length, 0),
-      costMicros: script.costMicros,
+      transcripts: {
+        language: audioResult.transcripts.language,
+        segments: audioResult.transcripts.segments,
+        full_text: audioResult.transcripts.full_text,
+      },
+      geminiCostMicros: script.costMicros,
     });
 
-    // Record quality metadata for telemetry, prompt tracking, and audit
-    try {
+    logger.info({ jobId: job.job_id, durationSeconds: audioResult.durationSeconds }, 'Job completed successfully');
+  } catch (err: unknown) {
+    if (err instanceof CapacityExhaustedError) {
+      logger.warn(
+        { jobId: job.job_id, waitSeconds: err.earliestResetSeconds },
+        'All AI models constrained. Transitioning job to waiting_for_capacity'
+      );
+
       await supabaseAdmin
         .from('audio_jobs')
         .update({
-          quality_meta: {
-            prompt_version: PROMPT_VERSION,
-            model: config.GEMINI_SCRIPT_MODEL,
-            voice: job.voice,
-            normalizer_version: '1.0.0',
-            duration_seconds: audioResult.durationSeconds,
-            chapters_count: audioResult.chapters.length,
-          },
+          status: 'waiting_for_capacity',
+          current_step: 'High demand right now. Audio synthesis will resume automatically.',
+          waiting_until: new Date(Date.now() + err.earliestResetSeconds * 1000).toISOString(),
         })
         .eq('id', job.job_id);
-    } catch (metaErr) {
-      logger.warn({ metaErr, jobId: job.job_id }, 'Failed to persist quality_meta to audio_job');
+
+      return;
     }
 
-    logger.info({ jobId: job.job_id, duration: audioResult.durationSeconds }, 'Job completed successfully');
-  } catch (err: unknown) {
-    const errorDetails = mapErrorToCode(err);
-    logger.error({ jobId: job.job_id, code: errorDetails.code, msg: errorDetails.message }, 'Job failed');
+    const { code, isRetryable } = mapErrorToCode(err);
+    logger.error({ jobId: job.job_id, code, err }, 'Job processing failed');
 
-    // Atomically report failure to database queue RPC
     try {
-      await failJob(job.job_id, errorDetails.code, errorDetails.message);
-    } catch (failRpcErr) {
-      logger.error({ failRpcErr, jobId: job.job_id }, 'Failed to invoke fail_job RPC');
+      await failJob(
+        job.job_id,
+        code,
+        err instanceof Error ? err.message : 'Unknown processing error'
+      );
+    } catch (failErr) {
+      logger.error({ jobId: job.job_id, failErr }, 'Failed to record job failure in database');
     }
   } finally {
     clearInterval(heartbeatTimer);
@@ -204,51 +275,125 @@ export async function processJob(job: ClaimedJob): Promise<void> {
 }
 
 /**
- * Worker polling loop with concurrency limiter and exponential backoff
+ * Autonomous Reaper:
+ * - Detects jobs with status = 'processing' whose heartbeat is older than 10 minutes and requeues them.
+ * - Detects jobs in 'waiting_for_capacity' whose waiting window has elapsed and returns them to 'queued'.
+ * - Fails jobs in 'waiting_for_capacity' older than 24 hours with CAPACITY_EXHAUSTED.
  */
-export async function startWorkerLoop(): Promise<void> {
+export async function reapStuckJobs(): Promise<void> {
+  try {
+    const now = Date.now();
+    const tenMinutesAgo = new Date(now - 10 * 60 * 1000).toISOString();
+    const twentyFourHoursAgo = new Date(now - 24 * 3600 * 1000).toISOString();
+    const nowIso = new Date(now).toISOString();
+
+    // 1. Resume waiting_for_capacity jobs whose wait time has passed
+    const { data: readyToResume } = await supabaseAdmin
+      .from('audio_jobs')
+      .select('id, attempt_count, created_at')
+      .eq('status', 'waiting_for_capacity')
+      .lte('waiting_until', nowIso);
+
+    if (readyToResume && readyToResume.length > 0) {
+      for (const wJob of readyToResume) {
+        // If waiting for over 24 hours, terminate with CAPACITY_EXHAUSTED
+        if (new Date(wJob.created_at).getTime() < now - 24 * 3600 * 1000) {
+          logger.warn({ jobId: wJob.id }, 'Job waited over 24 hours for capacity, marking failed');
+          await failJob(wJob.id, 'CAPACITY_EXHAUSTED', 'System capacity unavailable for 24 hours.');
+          continue;
+        }
+
+        logger.info({ jobId: wJob.id }, 'Capacity wait window elapsed, requeuing job');
+        await supabaseAdmin
+          .from('audio_jobs')
+          .update({
+            status: 'queued',
+            current_step: 'Resuming from saved step...',
+            waiting_until: null,
+          })
+          .eq('id', wJob.id);
+      }
+    }
+
+    // 2. Reset processing jobs with expired heartbeat
+    const { data: stuckJobs } = await supabaseAdmin
+      .from('audio_jobs')
+      .select('id, attempt_count')
+      .eq('status', 'processing')
+      .lt('heartbeat_at', tenMinutesAgo);
+
+    if (stuckJobs && stuckJobs.length > 0) {
+      for (const stuck of stuckJobs) {
+        if (stuck.attempt_count >= 3) {
+          logger.warn({ jobId: stuck.id }, 'Reaper: Failing job that exceeded 3 attempts');
+          await failJob(stuck.id, WORKER_ERROR_CODES.AI_UNAVAILABLE, 'Worker died repeatedly (reaper timeout)');
+        } else {
+          logger.info({ jobId: stuck.id, attempts: stuck.attempt_count }, 'Reaper: Resetting stuck job back to queued');
+          await supabaseAdmin
+            .from('audio_jobs')
+            .update({
+              status: 'queued',
+              current_step: 'Retrying after unexpected worker interruption',
+            })
+            .eq('id', stuck.id);
+        }
+      }
+    }
+  } catch (err: any) {
+    logger.warn({ err: err?.message }, 'Error running stuck job reaper');
+  }
+}
+
+/**
+ * Worker Main Loop: Claims jobs from the transactional queue,
+ * processes them with bounded concurrency, and sweeps for stuck jobs.
+ */
+export async function startWorker(): Promise<void> {
   if (isRunning) return;
   isRunning = true;
   shouldStop = false;
 
-  logger.info({ concurrency: config.CONCURRENCY }, 'Worker polling loop started');
+  logger.info({ concurrency: config.WORKER_CONCURRENCY }, 'Worker polling loop started');
+
+  // Start autonomous stuck job reaper every 30 seconds
+  const reaperTimer = setInterval(reapStuckJobs, 30000);
 
   while (!shouldStop) {
-    if (activeJobCount >= config.CONCURRENCY) {
+    if (activeJobCount >= config.WORKER_CONCURRENCY) {
       await new Promise((r) => setTimeout(r, 1000));
       continue;
     }
 
     try {
-      const job = await claimNextJob(config.VISIBILITY_TIMEOUT_SECONDS);
-      if (job) {
-        activeJobCount++;
-        processJob(job)
-          .catch((err) => {
-            logger.error({ err, jobId: job.job_id }, 'Unhandled exception in processJob');
-          })
-          .finally(() => {
-            activeJobCount--;
-          });
-      } else {
-        // Sleep when queue is empty
+      const job = await claimNextJob();
+
+      if (!job) {
         await new Promise((r) => setTimeout(r, config.POLL_INTERVAL_MS));
+        continue;
       }
-    } catch (err: unknown) {
-      logger.error({ err }, 'Error during claimNextJob polling');
+
+      activeJobCount++;
+      processJob(job)
+        .catch((err) => {
+          logger.error({ jobId: job.job_id, err }, 'Unhandled error in processJob promise');
+        })
+        .finally(() => {
+          activeJobCount--;
+        });
+    } catch (err) {
+      logger.error({ err }, 'Error in worker claim loop, backing off');
       await new Promise((r) => setTimeout(r, 5000));
     }
   }
 
-  logger.info('Worker loop cleanly stopped');
+  clearInterval(reaperTimer);
+  logger.info('Worker polling loop stopped cleanly');
+}
+
+export function stopWorker(): void {
+  shouldStop = true;
   isRunning = false;
 }
 
-export async function stopWorker(): Promise<void> {
-  shouldStop = true;
-  logger.info('Stopping worker; awaiting active jobs...');
-  while (activeJobCount > 0) {
-    await new Promise((r) => setTimeout(r, 500));
-  }
-  logger.info('All active worker jobs completed or released');
-}
+export const startWorkerLoop = startWorker;
+

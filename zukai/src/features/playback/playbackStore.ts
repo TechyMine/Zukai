@@ -1,33 +1,18 @@
 /**
  * ZUKAI AUDIO PLAYBACK STORE
  * Location: /zukai/src/features/playback/playbackStore.ts
- * Description: Global Zustand audio player engine backed by expo-av,
+ * Description: Global Zustand audio player engine backed by modern expo-audio,
  *              supporting background audio, playback speed, chapter seeking,
  *              karaoke transcript tracking, and throttled Supabase progress sync.
  */
 
 import { create } from 'zustand';
-import type { AVPlaybackStatus } from 'expo-av';
-
-let AudioModule: typeof import('expo-av').Audio | null = null;
-try {
-  let hasNativeAV = false;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { requireOptionalNativeModule } = require('expo-modules-core');
-    hasNativeAV = Boolean(requireOptionalNativeModule && requireOptionalNativeModule('ExponentAV'));
-  } catch {
-    hasNativeAV = false;
-  }
-
-  // If in Jest test environment or native ExponentAV is linked in binary, load Audio
-  if (hasNativeAV || process.env.NODE_ENV === 'test' || typeof (global as any).jest !== 'undefined') {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    AudioModule = require('expo-av').Audio;
-  }
-} catch (e) {
-  // Graceful fallback for Expo Go without native ExponentAV
-}
+import {
+  createAudioPlayer,
+  setAudioModeAsync,
+  type AudioPlayer,
+  type AudioStatus,
+} from 'expo-audio';
 import {
   AudioTrackRow,
   ChapterRow,
@@ -83,8 +68,8 @@ export interface PlaybackState {
   stop: () => Promise<void>;
 }
 
-// Global reference to the single Audio.Sound instance
-let currentSound: any = null;
+// Global reference to the single AudioPlayer instance
+let currentPlayer: AudioPlayer | null = null;
 let lastSyncTimestamp = 0;
 let sleepTimerInterval: any = null;
 
@@ -111,21 +96,27 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   playTrack: async (track: AudioTrackRow, title?: string) => {
     try {
       // 1. Configure audio mode for background playback
-      if (AudioModule) {
-        await AudioModule.setAudioModeAsync({
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: true,
-          shouldDuckAndroid: true,
-          playThroughEarpieceAndroid: false,
+      try {
+        await setAudioModeAsync({
+          playsInSilentMode: true,
+          shouldPlayInBackground: true,
+          interruptionMode: 'mixWithOthers',
         });
+      } catch (e) {
+        logger.warn('[AudioPlayer] setAudioModeAsync warning:', e);
       }
 
-      // 2. Unload existing sound if any
-      if (currentSound) {
+      // 2. Release existing player if any
+      if (currentPlayer) {
         try {
-          await currentSound.unloadAsync();
+          currentPlayer.pause();
+          if (typeof (currentPlayer as any).remove === 'function') {
+            (currentPlayer as any).remove();
+          } else if (typeof (currentPlayer as any).release === 'function') {
+            (currentPlayer as any).release();
+          }
         } catch {}
-        currentSound = null;
+        currentPlayer = null;
       }
 
       set({
@@ -154,34 +145,42 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
       const currentSpeed = savedProgress?.speed || get().speed || 1.0;
 
-      // 4. Instantiate Sound
-      if (AudioModule) {
-        const { sound, status } = await AudioModule.Sound.createAsync(
-        { uri: effectiveAudioUri },
-        {
-          shouldPlay: true,
-          positionMillis: initialPositionMs,
-          rate: currentSpeed,
-          shouldCorrectPitch: true,
-          progressUpdateIntervalMillis: 250,
-        },
-        (statusUpdate: AVPlaybackStatus) => {
-          if (!statusUpdate.isLoaded) {
-            if (statusUpdate.error) {
-              logger.error('[AudioPlayer] Error:', statusUpdate.error);
-            }
-            return;
-          }
+      // 4. Instantiate modern AudioPlayer
+      let playerInstance: AudioPlayer | null = null;
+      try {
+        playerInstance = createAudioPlayer(
+          { uri: effectiveAudioUri },
+          { updateInterval: 200 }
+        );
+      } catch (err) {
+        logger.warn('[AudioPlayer] Failed to instantiate native AudioPlayer, using state fallback:', err);
+      }
 
-          const pos = statusUpdate.positionMillis;
-          const dur = statusUpdate.durationMillis || track.duration_seconds * 1000;
-          const playing = statusUpdate.isPlaying;
-          const buffering = statusUpdate.isBuffering;
-          const finished = statusUpdate.didJustFinish;
+      if (playerInstance) {
+        currentPlayer = playerInstance;
+        currentPlayer.loop = get().isRepeat;
+        if (currentSpeed !== 1.0) {
+          currentPlayer.playbackRate = currentSpeed;
+        }
+
+        if (initialPositionMs > 0) {
+          try {
+            await currentPlayer.seekTo(initialPositionMs / 1000);
+          } catch {}
+        }
+
+        currentPlayer.addListener('playbackStatusUpdate', (status: AudioStatus) => {
+          if (!status.isLoaded) return;
+
+          const pos = Math.round((status.currentTime || 0) * 1000);
+          const dur = Math.round((status.duration || track.duration_seconds || 0) * 1000);
+          const playing = Boolean(status.playing);
+          const buffering = Boolean(status.isBuffering);
+          const finished = Boolean(status.didJustFinish);
 
           // Handle repeat
-          if (finished && get().isRepeat && currentSound) {
-            currentSound.replayAsync().catch(() => {});
+          if (finished && get().isRepeat && currentPlayer) {
+            currentPlayer.seekTo(0).then(() => currentPlayer?.play()).catch(() => {});
             return;
           }
 
@@ -232,26 +231,26 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
               positionSeconds: Math.floor(pos / 1000),
               speed: currentSpeed,
               completed: finished,
-            }).catch((err) => {
-              logger.warn('[AudioPlayer] Failed to sync progress:', err);
+            }).catch((syncErr) => {
+              logger.warn('[AudioPlayer] Failed to sync progress:', syncErr);
             });
           }
-        }
-      );
+        });
 
-      currentSound = sound;
+        // Start playback
+        currentPlayer.play();
 
-      set({
-        signedUrl: effectiveAudioUri,
-        chapters,
-        transcript,
-        speed: currentSpeed,
-        isBuffering: false,
-        isPlaying: status.isLoaded && status.isPlaying,
-        durationMs: (status.isLoaded && status.durationMillis) || track.duration_seconds * 1000,
-      });
+        set({
+          signedUrl: effectiveAudioUri,
+          chapters,
+          transcript,
+          speed: currentSpeed,
+          isBuffering: false,
+          isPlaying: true,
+          durationMs: track.duration_seconds * 1000,
+        });
       } else {
-        // Fallback for environments without native audio
+        // Fallback for non-native test environments
         set({
           signedUrl: effectiveAudioUri,
           chapters,
@@ -269,27 +268,30 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   },
 
   togglePlayPause: async () => {
-    if (!currentSound) return;
-    try {
-      const { isPlaying } = get();
-      if (isPlaying) {
-        await currentSound.pauseAsync();
-        set({ isPlaying: false });
-      } else {
-        await currentSound.playAsync();
-        set({ isPlaying: true });
+    const { isPlaying } = get();
+    if (currentPlayer) {
+      try {
+        if (isPlaying) {
+          currentPlayer.pause();
+          set({ isPlaying: false });
+        } else {
+          currentPlayer.play();
+          set({ isPlaying: true });
+        }
+      } catch (err) {
+        logger.error('[AudioPlayer] togglePlayPause failed:', err);
       }
-    } catch (err) {
-      logger.error('[AudioPlayer] togglePlayPause failed:', err);
+    } else {
+      set({ isPlaying: !isPlaying });
     }
   },
 
   seekTo: async (positionMs: number) => {
     const clamped = Math.max(0, Math.min(positionMs, get().durationMs));
     set({ positionMs: clamped });
-    if (currentSound) {
+    if (currentPlayer) {
       try {
-        await currentSound.setPositionAsync(clamped);
+        await currentPlayer.seekTo(clamped / 1000);
       } catch (err) {
         logger.error('[AudioPlayer] seekTo failed:', err);
       }
@@ -305,9 +307,9 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
   setSpeed: async (speed: number) => {
     set({ speed });
-    if (currentSound) {
+    if (currentPlayer) {
       try {
-        await currentSound.setRateAsync(speed, true);
+        currentPlayer.playbackRate = speed;
       } catch (err) {
         logger.error('[AudioPlayer] setSpeed failed:', err);
       }
@@ -335,7 +337,11 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   },
 
   toggleRepeat: () => {
-    set((state) => ({ isRepeat: !state.isRepeat }));
+    const nextRepeat = !get().isRepeat;
+    set({ isRepeat: nextRepeat });
+    if (currentPlayer) {
+      currentPlayer.loop = nextRepeat;
+    }
   },
 
   setSleepTimer: (minutes: number | null) => {
@@ -390,12 +396,16 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   },
 
   stop: async () => {
-    if (currentSound) {
+    if (currentPlayer) {
       try {
-        await currentSound.stopAsync();
-        await currentSound.unloadAsync();
+        currentPlayer.pause();
+        if (typeof (currentPlayer as any).remove === 'function') {
+          (currentPlayer as any).remove();
+        } else if (typeof (currentPlayer as any).release === 'function') {
+          (currentPlayer as any).release();
+        }
       } catch {}
-      currentSound = null;
+      currentPlayer = null;
     }
     set({
       isPlaying: false,

@@ -4,8 +4,11 @@ import { SYSTEM_PROMPT_ENGLISH, SYSTEM_PROMPT_HINGLISH } from './styleGuidePromp
 import { WorkerError, WORKER_ERROR_CODES } from '../errors.js';
 import { logger } from '../logger.js';
 import { normalizeHinglishSpelling } from '../hinglish/glossary.js';
+import { executeWithFallback } from '../ai/router.js';
+import { saveArtifact, getArtifact } from '../ai/artifactManager.js';
+import { PipelineTask } from '../ai/registry.js';
 
-export const PROMPT_VERSION = 'v1.3-adversarial-shielded';
+export const PROMPT_VERSION = 'v1.4-quota-aware-resumable';
 
 export const OutlineChapterSchema = z.object({
   title: z.string(),
@@ -36,6 +39,7 @@ export interface GeneratedScript {
   inputTokens: number;
   outputTokens: number;
   costMicros: number;
+  modelsUsed?: string[];
 }
 
 /**
@@ -58,14 +62,16 @@ function sanitizeSourceSentence(s: string): string | null {
 }
 
 /**
- * Prompts Gemini with structured output validation and automatic repair retries.
+ * Prompts Gemini with structured output validation, automatic repair retries,
+ * and quota-aware fallback across priority models.
  */
 async function callGeminiJson<T>(
+  task: PipelineTask,
   systemPrompt: string,
   userPrompt: string,
   schema: z.ZodType<T>,
   maxRepairs = 2
-): Promise<{ data: T; inputTokens: number; outputTokens: number }> {
+): Promise<{ data: T; inputTokens: number; outputTokens: number; modelUsed: string }> {
   if (!config.GEMINI_API_KEY || config.GEMINI_API_KEY.length < 10) {
     throw new WorkerError(
       WORKER_ERROR_CODES.AI_UNAVAILABLE,
@@ -74,86 +80,95 @@ async function callGeminiJson<T>(
     );
   }
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.GEMINI_SCRIPT_MODEL}:generateContent?key=${config.GEMINI_API_KEY}`;
+  // Use the router to acquire and fallback across models
+  const { result, modelId, tokensUsed } = await executeWithFallback(task, async (model) => {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model.id}:generateContent?key=${config.GEMINI_API_KEY}`;
+    let currentPrompt = userPrompt;
+    let attempt = 0;
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
 
-  let currentPrompt = userPrompt;
-  let attempt = 0;
-  let totalInputTokens = 0;
-  let totalOutputTokens = 0;
+    while (attempt <= maxRepairs) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: systemPrompt }] },
+          contents: [{ parts: [{ text: currentPrompt }] }],
+          generationConfig: {
+            response_mime_type: 'application/json',
+            temperature: 0.2,
+          },
+        }),
+        signal: AbortSignal.timeout(config.TIMEOUT_VOICING_MS || 45000),
+      });
 
-  while (attempt <= maxRepairs) {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ parts: [{ text: currentPrompt }] }],
-        generationConfig: {
-          response_mime_type: 'application/json',
-          temperature: 0.2,
-        },
-      }),
-    });
-
-    if (!res.ok) {
-      const errText = await res.text();
-      if (res.status === 429) {
+      if (!res.ok) {
+        const errText = await res.text();
+        if (res.status === 429) {
+          throw new WorkerError(
+            WORKER_ERROR_CODES.AI_UNAVAILABLE,
+            `Model ${model.id} rate limit exceeded: ${errText}`,
+            true
+          );
+        }
         throw new WorkerError(
           WORKER_ERROR_CODES.AI_UNAVAILABLE,
-          'Gemini rate limit exceeded. Requeuing job.',
+          `Model ${model.id} returned HTTP ${res.status}: ${errText}`,
           true
         );
       }
-      throw new WorkerError(
-        WORKER_ERROR_CODES.AI_UNAVAILABLE,
-        `Gemini API returned HTTP ${res.status}: ${errText}`,
-        true
-      );
-    }
 
-    const json = (await res.json()) as any;
-    const usage = json.usageMetadata || {};
-    totalInputTokens += usage.promptTokenCount || 0;
-    totalOutputTokens += usage.candidatesTokenCount || 0;
+      const json = (await res.json()) as any;
+      const usage = json.usageMetadata || {};
+      totalInputTokens += usage.promptTokenCount || 0;
+      totalOutputTokens += usage.candidatesTokenCount || 0;
 
-    const rawContent = json.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!rawContent) {
-      if (json.candidates?.[0]?.finishReason === 'SAFETY') {
-        throw new WorkerError(
-          WORKER_ERROR_CODES.CONTENT_BLOCKED,
-          'Content violated safety filters and was blocked.',
-          false
-        );
-      }
-      throw new WorkerError(
-        WORKER_ERROR_CODES.AI_UNAVAILABLE,
-        'Empty response received from Gemini engine.',
-        true
-      );
-    }
-
-    try {
-      const parsedJson = JSON.parse(rawContent);
-      const validated = schema.parse(parsedJson);
-      return {
-        data: validated,
-        inputTokens: totalInputTokens,
-        outputTokens: totalOutputTokens,
-      };
-    } catch (parseErr: unknown) {
-      attempt++;
-      if (attempt > maxRepairs) {
+      const rawContent = json.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!rawContent) {
+        if (json.candidates?.[0]?.finishReason === 'SAFETY') {
+          throw new WorkerError(
+            WORKER_ERROR_CODES.CONTENT_BLOCKED,
+            'Content violated safety filters and was blocked.',
+            false
+          );
+        }
         throw new WorkerError(
           WORKER_ERROR_CODES.AI_UNAVAILABLE,
-          `Failed to parse LLM structured output after ${maxRepairs} repair attempts: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`,
+          `Empty response received from ${model.id}`,
           true
         );
       }
-      currentPrompt = `${userPrompt}\n\nPREVIOUS RESPONSE WAS INVALID:\n${rawContent}\n\nVALIDATION ERROR:\n${parseErr instanceof Error ? parseErr.message : String(parseErr)}\nPlease fix the JSON formatting to match the required schema exactly.`;
-    }
-  }
 
-  throw new WorkerError(WORKER_ERROR_CODES.AI_UNAVAILABLE, 'Exceeded max repair attempts', true);
+      try {
+        const parsedJson = JSON.parse(rawContent);
+        const validated = schema.parse(parsedJson);
+        return {
+          result: {
+            data: validated,
+            inputTokens: totalInputTokens,
+            outputTokens: totalOutputTokens,
+            modelUsed: model.id,
+          },
+          tokensUsed: totalInputTokens + totalOutputTokens,
+        };
+      } catch (parseErr: unknown) {
+        attempt++;
+        if (attempt > maxRepairs) {
+          throw new WorkerError(
+            WORKER_ERROR_CODES.AI_UNAVAILABLE,
+            `Failed to parse LLM structured output after ${maxRepairs} repair attempts: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`,
+            true
+          );
+        }
+        currentPrompt = `${userPrompt}\n\nPREVIOUS RESPONSE WAS INVALID:\n${rawContent}\n\nVALIDATION ERROR:\n${parseErr instanceof Error ? parseErr.message : String(parseErr)}\nPlease fix the JSON formatting to match the required schema exactly.`;
+      }
+    }
+
+    throw new WorkerError(WORKER_ERROR_CODES.AI_UNAVAILABLE, 'Exceeded max repair attempts', true);
+  });
+
+  return result;
 }
 
 export function calculateGeminiCostMicros(inputTokens: number, outputTokens: number): number {
@@ -166,15 +181,31 @@ export async function generateExplanationScript(
   documentText: string,
   language: 'english' | 'hinglish',
   depth: 'quick' | 'standard' | 'deep',
-  originalTitle: string
+  originalTitle: string,
+  jobId?: string
 ): Promise<GeneratedScript> {
   const systemPrompt = language === 'hinglish' ? SYSTEM_PROMPT_HINGLISH : SYSTEM_PROMPT_ENGLISH;
+  const modelsUsed: Set<string> = new Set();
 
   if (config.GEMINI_API_KEY && config.GEMINI_API_KEY.length > 10) {
     try {
       logger.info({ depth, language, version: PROMPT_VERSION }, 'Starting Pass A: Outline generation');
 
-      const outlinePrompt = `DOCUMENT TITLE: "${originalTitle}"
+      // 1. Check if outline artifact already exists (resumable pipeline)
+      let outline: OutlineResponse | null = null;
+      let totalInput = 0;
+      let totalOutput = 0;
+
+      if (jobId) {
+        const cachedOutline = await getArtifact(jobId, 'outline', 0);
+        if (cachedOutline) {
+          outline = cachedOutline;
+          logger.info({ jobId }, 'Resumed outline from cached job artifact');
+        }
+      }
+
+      if (!outline) {
+        const outlinePrompt = `DOCUMENT TITLE: "${originalTitle}"
 DEPTH MODE: ${depth}
 
 SOURCE TEXT:
@@ -199,20 +230,43 @@ Generate a comprehensive outline with 2 to 5 logical audio chapters following th
   ]
 }`;
 
-      const outlineResult = await callGeminiJson(
-        systemPrompt,
-        outlinePrompt,
-        OutlineResponseSchema
-      );
+        const outlineResult = await callGeminiJson(
+          'outline',
+          systemPrompt,
+          outlinePrompt,
+          OutlineResponseSchema
+        );
 
-      let totalInput = outlineResult.inputTokens;
-      let totalOutput = outlineResult.outputTokens;
+        outline = outlineResult.data;
+        totalInput += outlineResult.inputTokens;
+        totalOutput += outlineResult.outputTokens;
+        modelsUsed.add(outlineResult.modelUsed);
+
+        if (jobId) {
+          await saveArtifact(jobId, 'outline', 0, 'json', outline, {
+            model: outlineResult.modelUsed,
+          });
+        }
+      }
+
       const scriptChapters: ScriptChapter[] = [];
 
-      for (let i = 0; i < outlineResult.data.chapters.length; i++) {
-        const ch = outlineResult.data.chapters[i];
+      // 2. Generate Chapters with Resumability
+      for (let i = 0; i < outline.chapters.length; i++) {
+        const ch = outline.chapters[i];
+
+        // Check if chapter was already generated
+        if (jobId) {
+          const cachedChapter = await getArtifact(jobId, 'script', i);
+          if (cachedChapter) {
+            scriptChapters.push(cachedChapter);
+            logger.info({ jobId, chapterIndex: i }, 'Resumed chapter from cached job artifact');
+            continue;
+          }
+        }
+
         const chapterPrompt = `Generate the spoken audio script for Chapter ${i + 1}: "${ch.title}".
-Overview of whole document: "${outlineResult.data.overview}"
+Overview of whole document: "${outline.overview}"
 Key ideas to explain: ${ch.keyIdeas.join('; ')}
 Key terms to define: ${ch.keyTerms.join('; ')}
 Preserve these exact figures/names: ${(ch.numbersOrNames || []).join('; ')}
@@ -236,6 +290,7 @@ Respond with JSON:
         });
 
         const chapterRes = await callGeminiJson(
+          'script',
           systemPrompt,
           chapterPrompt,
           chapterSchema
@@ -243,17 +298,26 @@ Respond with JSON:
 
         totalInput += chapterRes.inputTokens;
         totalOutput += chapterRes.outputTokens;
+        modelsUsed.add(chapterRes.modelUsed);
 
         const cleanText =
           language === 'hinglish'
             ? normalizeHinglishSpelling(chapterRes.data.text)
             : chapterRes.data.text;
 
-        scriptChapters.push({
+        const chapterData: ScriptChapter = {
           title: ch.title,
           summary: chapterRes.data.summary,
           text: cleanText,
-        });
+        };
+
+        scriptChapters.push(chapterData);
+
+        if (jobId) {
+          await saveArtifact(jobId, 'script', i, 'json', chapterData, {
+            model: chapterRes.modelUsed,
+          });
+        }
       }
 
       const totalWords = scriptChapters.reduce(
@@ -264,12 +328,13 @@ Respond with JSON:
       const costMicros = calculateGeminiCostMicros(totalInput, totalOutput);
 
       return {
-        title: outlineResult.data.title || originalTitle,
+        title: outline.title || originalTitle,
         chapters: scriptChapters,
         totalWords,
         inputTokens: totalInput,
         outputTokens: totalOutput,
         costMicros,
+        modelsUsed: Array.from(modelsUsed),
       };
     } catch (err: unknown) {
       if (err instanceof WorkerError) throw err;
@@ -291,7 +356,6 @@ function generateLocalFallbackScript(
 ): GeneratedScript {
   const cleanTitle = originalTitle.replace(/\.[^/.]+$/, '');
 
-  // Extract source sentences while sanitizing adversarial prompt injection
   const rawSentences = text
     .replace(/(\w+)-\r?\n(\w+)/g, '$1$2')
     .split(/(?<=[.!?])\s+/)
@@ -299,7 +363,6 @@ function generateLocalFallbackScript(
     .map(sanitizeSourceSentence)
     .filter((s): s is string => Boolean(s && s.length > 15 && !s.includes('###') && !s.includes('---')));
 
-  // Extract key figures and entities
   const keyEntities = text.match(/\b(?:\$\d+(?:\.\d+)?(?:M|B|K)?|Rs\.?\s*\d+(?:\s*(?:lakh|crore))?|\d+(?:\.\d+)?%|\d+\s*(?:teraflops|watts|basis points|seconds|days|GB|heures|Euro|metric tons))\b/gi) || [];
 
   const chapters: ScriptChapter[] = [];
@@ -359,5 +422,6 @@ function generateLocalFallbackScript(
     inputTokens: 0,
     outputTokens: 0,
     costMicros: 0,
+    modelsUsed: ['grounded-local-fallback'],
   };
 }

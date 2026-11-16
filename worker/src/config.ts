@@ -31,6 +31,9 @@ const envSchema = z.object({
   MAX_PAGES_PRO: z.coerce.number().default(150),
   MAX_WORDS_FREE: z.coerce.number().default(8000),
   MAX_WORDS_PRO: z.coerce.number().default(60000),
+  FFMPEG_PATH: z.string().default('ffmpeg'),
+  FFPROBE_PATH: z.string().default('ffprobe'),
+  WORKER_CONCURRENCY: z.coerce.number().default(2),
 });
 
 export const config = envSchema.parse({
@@ -55,6 +58,9 @@ export const config = envSchema.parse({
   MAX_PAGES_PRO: process.env.MAX_PAGES_PRO,
   MAX_WORDS_FREE: process.env.MAX_WORDS_FREE,
   MAX_WORDS_PRO: process.env.MAX_WORDS_PRO,
+  FFMPEG_PATH: process.env.FFMPEG_PATH,
+  FFPROBE_PATH: process.env.FFPROBE_PATH,
+  WORKER_CONCURRENCY: process.env.CONCURRENCY || process.env.WORKER_CONCURRENCY,
 });
 
 // Voice mapping specifications

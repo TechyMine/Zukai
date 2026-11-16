@@ -37,13 +37,16 @@ export interface CompleteJobParams {
   fileSizeBytes: number;
   chapters: ChapterInput[];
   transcripts: {
-    raw_text: string;
+    raw_text?: string;
+    full_text?: string;
     segments: TranscriptSentence[];
+    language?: string;
   };
   inputTokens?: number;
   outputTokens?: number;
   ttsCharacters?: number;
   costMicros?: number;
+  geminiCostMicros?: number;
 }
 
 export async function claimNextJob(vtSeconds = 600): Promise<ClaimedJob | null> {
@@ -89,7 +92,7 @@ export async function completeJob(params: CompleteJobParams): Promise<any> {
     p_input_tokens: params.inputTokens ?? 0,
     p_output_tokens: params.outputTokens ?? 0,
     p_tts_characters: params.ttsCharacters ?? 0,
-    p_cost_micros: params.costMicros ?? 0,
+    p_cost_micros: params.costMicros ?? params.geminiCostMicros ?? 0,
   });
 
   if (error) {

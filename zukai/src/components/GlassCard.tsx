@@ -20,7 +20,7 @@ export interface GlassCardProps extends ViewProps {
   glow?: boolean;
   /** Override corner radius */
   borderRadius?: number;
-  /** Padding inside the card */
+  /** Padding inside the card (default: 12) */
   padding?: number;
   /** Disable blur on low-end devices automatically (default: true) */
   adaptiveBlur?: boolean;
@@ -35,21 +35,76 @@ export function GlassCard({
   style,
   ...rest
 }: GlassCardProps) {
-  const { colors, radius: r, spacing } = useTheme();
-  const br = borderRadius ?? r.xl;
-  const pad = padding ?? spacing['2xl'];
+  const { colors } = useTheme();
+  // Compact card radius token = 16
+  const br = borderRadius ?? 16;
+  const cardPadding = padding !== undefined ? padding : 12;
 
   const borderColor = glow
     ? colors.glass.borderActive
     : 'rgba(255, 255, 255, 0.16)';
 
+  const flatStyle = (StyleSheet.flatten(style) || {}) as Record<string, any>;
+  const {
+    width,
+    minWidth,
+    maxWidth,
+    margin,
+    marginTop,
+    marginBottom,
+    marginLeft,
+    marginRight,
+    marginHorizontal,
+    marginVertical,
+    alignSelf,
+    flex,
+    flexGrow,
+    flexShrink,
+    position,
+    top,
+    bottom,
+    left,
+    right,
+    zIndex,
+    ...innerStyle
+  } = flatStyle;
+
+  const outerLayoutStyle: Record<string, any> = {
+    borderRadius: br,
+  };
+  if (width !== undefined) outerLayoutStyle.width = width;
+  if (minWidth !== undefined) outerLayoutStyle.minWidth = minWidth;
+  if (maxWidth !== undefined) outerLayoutStyle.maxWidth = maxWidth;
+  if (margin !== undefined) outerLayoutStyle.margin = margin;
+  if (marginTop !== undefined) outerLayoutStyle.marginTop = marginTop;
+  if (marginBottom !== undefined) outerLayoutStyle.marginBottom = marginBottom;
+  if (marginLeft !== undefined) outerLayoutStyle.marginLeft = marginLeft;
+  if (marginRight !== undefined) outerLayoutStyle.marginRight = marginRight;
+  if (marginHorizontal !== undefined) outerLayoutStyle.marginHorizontal = marginHorizontal;
+  if (marginVertical !== undefined) outerLayoutStyle.marginVertical = marginVertical;
+  if (alignSelf !== undefined) {
+    outerLayoutStyle.alignSelf = alignSelf;
+  } else if (width === '100%') {
+    outerLayoutStyle.alignSelf = 'stretch';
+  }
+  if (flex !== undefined) outerLayoutStyle.flex = flex;
+  if (flexGrow !== undefined) outerLayoutStyle.flexGrow = flexGrow;
+  if (flexShrink !== undefined) outerLayoutStyle.flexShrink = flexShrink;
+  if (position !== undefined) outerLayoutStyle.position = position;
+  if (top !== undefined) outerLayoutStyle.top = top;
+  if (bottom !== undefined) outerLayoutStyle.bottom = bottom;
+  if (left !== undefined) outerLayoutStyle.left = left;
+  if (right !== undefined) outerLayoutStyle.right = right;
+  if (zIndex !== undefined) outerLayoutStyle.zIndex = zIndex;
+
   return (
     <View
       style={[
         styles.outerShadow,
-        { borderRadius: br },
+        outerLayoutStyle,
         glow && styles.glowShadow,
       ]}
+      pointerEvents="box-none"
     >
       <View
         style={[
@@ -57,9 +112,9 @@ export function GlassCard({
           {
             borderRadius: br,
             borderColor,
-            overflow: 'hidden',
+            padding: cardPadding,
           },
-          style,
+          innerStyle,
         ]}
         {...rest}
       >
@@ -67,11 +122,13 @@ export function GlassCard({
         <BlurView
           intensity={32}
           tint="dark"
+          pointerEvents="none"
           style={[StyleSheet.absoluteFill, { borderRadius: br }]}
         />
 
         {/* Layer 2: Frosted Deep Surface Glass */}
         <View
+          pointerEvents="none"
           style={[
             StyleSheet.absoluteFill,
             {
@@ -91,6 +148,7 @@ export function GlassCard({
           locations={[0, 0.4, 1]}
           start={{ x: 0.5, y: 0 }}
           end={{ x: 0.5, y: 1 }}
+          pointerEvents="none"
           style={[
             StyleSheet.absoluteFill,
             { borderRadius: br, height: 60 },
@@ -103,6 +161,7 @@ export function GlassCard({
             colors={['rgba(146, 247, 2, 0.35)', 'transparent']}
             start={{ x: 0, y: 0 }}
             end={{ x: 0.5, y: 1 }}
+            pointerEvents="none"
             style={[
               StyleSheet.absoluteFill,
               { borderRadius: br, height: 70 },
@@ -110,8 +169,8 @@ export function GlassCard({
           />
         )}
 
-        {/* Content Container */}
-        <View style={{ padding: pad }}>{children}</View>
+        {/* Children render directly within the flex container over the absoluteFill backdrop */}
+        {children}
       </View>
     </View>
   );
@@ -119,6 +178,8 @@ export function GlassCard({
 
 const styles = StyleSheet.create({
   outerShadow: {
+    width: '100%',
+    alignSelf: 'stretch',
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.45,
@@ -133,6 +194,10 @@ const styles = StyleSheet.create({
     elevation: 12,
   },
   container: {
+    width: '100%',
+    alignSelf: 'stretch',
     borderWidth: 1.2,
+    overflow: 'hidden',
+    position: 'relative',
   },
 });

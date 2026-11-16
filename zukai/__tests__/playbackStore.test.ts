@@ -4,24 +4,32 @@
 
 import { usePlaybackStore } from '../src/features/playback/playbackStore';
 
-// Mock expo-av
-jest.mock('expo-av', () => ({
-  Audio: {
-    setAudioModeAsync: jest.fn().mockResolvedValue(undefined),
-    Sound: {
-      createAsync: jest.fn().mockResolvedValue({
-        sound: {
-          playAsync: jest.fn().mockResolvedValue(undefined),
-          pauseAsync: jest.fn().mockResolvedValue(undefined),
-          stopAsync: jest.fn().mockResolvedValue(undefined),
-          unloadAsync: jest.fn().mockResolvedValue(undefined),
-          setPositionAsync: jest.fn().mockResolvedValue(undefined),
-          setRateAsync: jest.fn().mockResolvedValue(undefined),
-        },
-        status: { isLoaded: true, isPlaying: true, durationMillis: 60000 },
-      }),
-    },
-  },
+// Mock expo-audio
+const mockPlayerInstance = {
+  play: jest.fn(),
+  pause: jest.fn(),
+  seekTo: jest.fn().mockResolvedValue(undefined),
+  release: jest.fn(),
+  remove: jest.fn(),
+  addListener: jest.fn((event, callback) => {
+    // Immediately emit an initial loaded status
+    callback({
+      isLoaded: true,
+      playing: true,
+      isBuffering: false,
+      currentTime: 0,
+      duration: 60,
+      didJustFinish: false,
+    });
+    return { remove: jest.fn() };
+  }),
+  loop: false,
+  playbackRate: 1.0,
+};
+
+jest.mock('expo-audio', () => ({
+  setAudioModeAsync: jest.fn().mockResolvedValue(undefined),
+  createAudioPlayer: jest.fn(() => mockPlayerInstance),
 }));
 
 // Mock tracksApi & playbackApi

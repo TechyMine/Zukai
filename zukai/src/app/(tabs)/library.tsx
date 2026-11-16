@@ -1,8 +1,8 @@
 /**
- * ZUKAI — Library Screen
+ * ZUKAI — Library Screen (Phase 7B Compact Polish)
  * Connected to live Supabase data layer via TanStack Query.
- * Supports keyword search, MIME-type and status filtering, rename/delete modals,
- * sort controls, favorites, downloads filter, and direct audio player navigation.
+ * Single row of filter chips, sort modal, 60–64dp document rows with clear metadata,
+ * language & depth chips, inline favorite star, 3-dot action sheet, and MP3 export.
  */
 
 import React, { useState, useMemo, useEffect } from 'react';
@@ -15,9 +15,9 @@ import {
   ActivityIndicator,
   Modal,
   Alert,
+  Share,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   FileText,
   ChevronRight,
@@ -27,73 +27,106 @@ import {
   Edit2,
   Trash2,
   Star,
+  SlidersHorizontal,
+  Download,
+  Share2,
+  RotateCcw,
+  Check,
+  X,
+  Clock,
 } from 'lucide-react-native';
-import { MeshBackground } from '../../components/MeshBackground';
-import { GlassCard } from '../../components/GlassCard';
-import { Text } from '../../components/Text';
-import { ShinyButton } from '../../components/ShinyButton';
-import { EmptyState } from '../../components/EmptyState';
-import { useLibrary } from '@/features/library/hooks/useLibrary';
+import * as FileSystem from 'expo-file-system/legacy';
+import { ScreenContainer } from '@/components/ScreenContainer';
+import { GlassCard } from '@/components/GlassCard';
+import { Text } from '@/components/Text';
+import { ShinyButton } from '@/components/ShinyButton';
+import { EmptyState } from '@/components/EmptyState';
+import { DocumentRow } from '@/components/DocumentRow';
+import { useLibrary, LibraryItem } from '@/features/library/hooks/useLibrary';
 import { useSoftDeleteDocument } from '@/features/documents/hooks/useDocuments';
 import { updateDocumentTitle } from '@/features/documents/api/documentsApi';
 import { useQueryClient } from '@tanstack/react-query';
-import { DocumentRow } from '@/features/documents/api/documentsApi';
 import { usePlaybackStore } from '@/features/playback/playbackStore';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/lib/authStore';
-import { getDownloadsIndex } from '@/features/playback/downloadManager';
+import {
+  getDownloadsIndex,
+  downloadTrackForOffline,
+  deleteDownloadedTrack,
+} from '@/features/playback/downloadManager';
+import { getSignedAudioUrl } from '@/features/tracks/api/tracksApi';
+import { useCreateAudioJob } from '@/features/jobs/hooks/useJob';
 
 const C = {
-  brandHero: '#92F702',
+  brandHero: '#8EF20F',
+  canvasSurface: '#0D1E24',
   canvasSurfaceRaised: '#132830',
   canvasSurfaceHighlight: '#18333D',
-  textPrimary: '#F8F9FA',
+  textPrimary: '#F4F7F2',
   textSecondary: '#B5C4CC',
   textTertiary: '#6B828F',
   textInverse: '#09161B',
-  glassBorder: 'rgba(255,255,255,0.14)',
   success: '#00E676',
   warning: '#FFD600',
   error: '#FF5252',
 };
 
-const FILTERS = ['All', 'PDF', 'Word', 'Audio Ready', 'Processing'];
+const FILTERS = ['All', 'Ready', 'Processing', 'Failed', 'Downloaded', 'Favorites'];
 
 type SortBy = 'newest' | 'oldest' | 'name' | 'duration';
 const SORT_OPTIONS: { key: SortBy; label: string }[] = [
-  { key: 'newest', label: 'Newest' },
-  { key: 'oldest', label: 'Oldest' },
-  { key: 'name', label: 'Name' },
-  { key: 'duration', label: 'Duration' },
+  { key: 'newest', label: 'Newest First' },
+  { key: 'oldest', label: 'Oldest First' },
+  { key: 'name', label: 'Alphabetical (A-Z)' },
+  { key: 'duration', label: 'Audio Duration' },
 ];
+
+function formatDate(iso: string): string {
+  try {
+    const d = new Date(iso);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const month = months[d.getMonth()];
+    const day = d.getDate();
+    const hours = d.getHours();
+    const minutes = d.getMinutes().toString().padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    const hour12 = hours % 12 || 12;
+    return `${month} ${day}, ${hour12}:${minutes} ${ampm}`;
+  } catch {
+    return 'Recent';
+  }
+}
 
 export default function LibraryScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const { playTrack } = usePlaybackStore();
+  const createJobMutation = useCreateAudioJob();
+  const softDeleteMutation = useSoftDeleteDocument();
+
+  // Search & Filter state
   const [activeFilter, setActiveFilter] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Sort state
   const [sortBy, setSortBy] = useState<SortBy>('newest');
+  const [showSortModal, setShowSortModal] = useState(false);
 
   // Favorites state
-  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
 
   // Downloads state
-  const [showDownloadsOnly, setShowDownloadsOnly] = useState(false);
   const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
+  const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
 
   const { data: libraryItems = [], isLoading, error, refetch } = useLibrary();
-  const softDeleteMutation = useSoftDeleteDocument();
 
-  // Document actions modal state
-  const [selectedDoc, setSelectedDoc] = useState<DocumentRow | null>(null);
+  // Selected item for action sheet / modal
+  const [actionItem, setActionItem] = useState<LibraryItem | null>(null);
   const [isRenameOpen, setIsRenameOpen] = useState(false);
   const [renameText, setRenameText] = useState('');
   const [isSubmittingRename, setIsSubmittingRename] = useState(false);
+  const [isExportingMp3, setIsExportingMp3] = useState(false);
 
   // Load favorites on mount
   useEffect(() => {
@@ -110,75 +143,123 @@ export default function LibraryScreen() {
   }, []);
 
   // Load downloaded track IDs on mount
+  const refreshDownloads = async () => {
+    const index = await getDownloadsIndex();
+    setDownloadedIds(new Set(Object.keys(index)));
+  };
+
   useEffect(() => {
-    getDownloadsIndex().then((index) => {
-      setDownloadedIds(new Set(Object.keys(index)));
-    });
+    refreshDownloads();
   }, []);
 
   async function toggleFavorite(documentId: string) {
     const userId = useAuthStore.getState().user?.id;
     if (!userId) return;
-    if (favoriteIds.has(documentId)) {
-      await supabase
-        .from('document_favorites')
-        .delete()
-        .eq('document_id', documentId)
-        .eq('user_id', userId);
-      setFavoriteIds((prev) => {
-        const n = new Set(prev);
-        n.delete(documentId);
-        return n;
-      });
+
+    const isFav = favoriteIds.has(documentId);
+    const next = new Set(favoriteIds);
+    if (isFav) {
+      next.delete(documentId);
+      setFavoriteIds(next);
+      await supabase.from('document_favorites').delete().eq('user_id', userId).eq('document_id', documentId);
     } else {
-      await supabase
-        .from('document_favorites')
-        .insert({ document_id: documentId, user_id: userId });
-      setFavoriteIds((prev) => new Set([...prev, documentId]));
+      next.add(documentId);
+      setFavoriteIds(next);
+      await supabase.from('document_favorites').insert({ user_id: userId, document_id: documentId });
     }
   }
 
+  // Handle Download Toggle
+  async function handleToggleDownload(item: LibraryItem) {
+    if (!item.track) return;
+    const trackId = item.track.id;
+
+    if (downloadedIds.has(trackId)) {
+      await deleteDownloadedTrack(trackId);
+      await refreshDownloads();
+      Alert.alert('Offline Storage', 'Track removed from offline downloads.');
+    } else {
+      setDownloadingIds((prev) => new Set(prev).add(trackId));
+      try {
+        await downloadTrackForOffline(item.track, item.document.title);
+        await refreshDownloads();
+        Alert.alert('Offline Storage', 'Track saved for offline listening.');
+      } catch (err: any) {
+        Alert.alert('Download Failed', err?.message || 'Could not download track');
+      } finally {
+        setDownloadingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(trackId);
+          return next;
+        });
+      }
+    }
+  }
+
+  // Handle Export MP3
+  async function handleExportMp3(item: LibraryItem) {
+    if (!item.track) {
+      Alert.alert('Export MP3', 'This document does not have a ready MP3 audio track yet.');
+      return;
+    }
+
+    try {
+      setIsExportingMp3(true);
+      const signedUrl = await getSignedAudioUrl(item.track.storage_path);
+      const safeTitle = item.document.title.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const tempUri = `${FileSystem.cacheDirectory}${safeTitle}.mp3`;
+
+      // Download file to temp cache
+      const dl = await FileSystem.downloadAsync(signedUrl, tempUri);
+      if (dl.status === 200) {
+        await Share.share({
+          title: `${item.document.title} - Zukai Audio`,
+          message: `Listen to "${item.document.title}" audio explanation on Zukai:`,
+          url: dl.uri,
+        });
+      } else {
+        throw new Error('Failed to download audio for export.');
+      }
+    } catch (err: any) {
+      Alert.alert('Export Error', err?.message || 'Unable to export MP3 audio.');
+    } finally {
+      setIsExportingMp3(false);
+      setActionItem(null);
+    }
+  }
+
+  // Filtered & Sorted items
   const filteredItems = useMemo(() => {
     let items = libraryItems.filter((item) => {
-      // 1. Search Query Filter
-      if (searchQuery.trim().length > 0) {
+      // 1. Search Query
+      if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
         const matchesTitle = item.document.title.toLowerCase().includes(query);
         const matchesFilename = item.document.original_filename.toLowerCase().includes(query);
         if (!matchesTitle && !matchesFilename) return false;
       }
 
-      // 2. Chip Filter
-      if (activeFilter === 'PDF') {
-        return item.document.mime_type.includes('pdf');
-      }
-      if (activeFilter === 'Word') {
-        return (
-          item.document.mime_type.includes('word') ||
-          item.document.original_filename.endsWith('.docx')
-        );
-      }
-      if (activeFilter === 'Audio Ready') {
+      // 2. Filter Chip
+      if (activeFilter === 'Ready') {
         return item.document.status === 'ready' && Boolean(item.track);
       }
       if (activeFilter === 'Processing') {
         return item.document.status === 'uploaded' || item.document.status === 'uploading';
       }
+      if (activeFilter === 'Failed') {
+        return item.document.status === 'failed';
+      }
+      if (activeFilter === 'Downloaded') {
+        return item.track && downloadedIds.has(item.track.id);
+      }
+      if (activeFilter === 'Favorites') {
+        return favoriteIds.has(item.document.id);
+      }
 
       return true;
     });
 
-    // 3. Favorites filter
-    if (showFavoritesOnly) {
-      items = items.filter((item) => favoriteIds.has(item.document.id));
-    }
-
-    // 4. Downloads filter
-    if (showDownloadsOnly) {
-      items = items.filter((item) => item.track && downloadedIds.has(item.track.id));
-    }
-
-    // 5. Sort
+    // Sort items
     items = [...items].sort((a, b) => {
       if (sortBy === 'newest') {
         return new Date(b.document.created_at).getTime() - new Date(a.document.created_at).getTime();
@@ -196,30 +277,29 @@ export default function LibraryScreen() {
     });
 
     return items;
-  }, [libraryItems, searchQuery, activeFilter, showFavoritesOnly, favoriteIds, showDownloadsOnly, downloadedIds, sortBy]);
+  }, [libraryItems, searchQuery, activeFilter, downloadedIds, favoriteIds, sortBy]);
 
   // Rename Handler
   const handleSaveRename = async () => {
-    if (!selectedDoc || !renameText.trim()) return;
+    if (!actionItem || !renameText.trim()) return;
     try {
       setIsSubmittingRename(true);
-      await updateDocumentTitle(selectedDoc.id, renameText.trim());
+      await updateDocumentTitle(actionItem.document.id, renameText.trim());
       setIsRenameOpen(false);
-      setSelectedDoc(null);
+      setActionItem(null);
       queryClient.invalidateQueries({ queryKey: ['library'] });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Unable to update document title';
-      Alert.alert('Rename Error', msg);
+    } catch (err: any) {
+      Alert.alert('Rename Error', err?.message || 'Unable to update title');
     } finally {
       setIsSubmittingRename(false);
     }
   };
 
   // Delete Handler
-  const handleDeleteDocument = (doc: DocumentRow) => {
+  const handleDeleteDocument = (item: LibraryItem) => {
     Alert.alert(
       'Delete Document',
-      `Are you sure you want to delete "${doc.title}"? The document and any generated audio will be removed.`,
+      `Are you sure you want to delete "${item.document.title}"?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -227,11 +307,10 @@ export default function LibraryScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await softDeleteMutation.mutateAsync(doc.id);
-              setSelectedDoc(null);
-            } catch (err: unknown) {
-              const msg = err instanceof Error ? err.message : 'Unable to delete document';
-              Alert.alert('Delete Error', msg);
+              await softDeleteMutation.mutateAsync(item.document.id);
+              setActionItem(null);
+            } catch (err: any) {
+              Alert.alert('Delete Error', err?.message || 'Unable to delete');
             }
           },
         },
@@ -239,419 +318,560 @@ export default function LibraryScreen() {
     );
   };
 
-  return (
-    <View style={styles.root}>
-      <MeshBackground variant="library" />
+  // Retry / Regenerate Handler
+  const handleRegenerateAudio = async (item: LibraryItem) => {
+    try {
+      const newJob = await createJobMutation.mutateAsync({
+        documentId: item.document.id,
+        language: 'english',
+        depth: 'standard',
+        voice: 'Aoede',
+      });
+      setActionItem(null);
+      router.push(`/processing/${newJob.id}` as any);
+    } catch (err: any) {
+      Alert.alert('Regeneration Error', err?.message || 'Failed to start job');
+    }
+  };
 
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[
-          styles.content,
-          { paddingTop: insets.top + 16, paddingBottom: 120 },
-        ]}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* ── Header ── */}
-        <View style={styles.header}>
-          <Text variant="title2" rawColor={C.textPrimary} style={styles.headerTitle}>
-            My Library
-          </Text>
-          <Pressable style={styles.filterIconBtn} onPress={() => refetch()}>
+  return (
+    <ScreenContainer meshVariant="library" hasTabBar>
+      {/* 1. Header with Sort & Refresh */}
+      <View style={styles.header}>
+        <Text variant="headline" rawColor={C.textPrimary} style={styles.headerTitle}>
+          My Library ({libraryItems.length})
+        </Text>
+        <View style={styles.headerRight}>
+          <Pressable
+            style={styles.headerIconBtn}
+            onPress={() => setShowSortModal(true)}
+            accessibilityLabel="Sort documents"
+          >
+            <SlidersHorizontal size={18} color={C.textSecondary} strokeWidth={2} />
+          </Pressable>
+          <Pressable
+            style={styles.headerIconBtn}
+            onPress={() => refetch()}
+            accessibilityLabel="Refresh library"
+          >
             <RefreshCw size={18} color={C.textSecondary} strokeWidth={2} />
           </Pressable>
         </View>
+      </View>
 
-        {/* ── Search Bar ── */}
-        <View style={styles.searchBar}>
-          <Search size={18} color={C.textTertiary} strokeWidth={2} />
-          <TextInput
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder="Search documents by title..."
-            placeholderTextColor={C.textTertiary}
-            style={styles.searchInput}
-          />
-        </View>
-
-        {/* ── Filter Chips ── */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chipsRow}
-          style={styles.chipsScroll}
-        >
-          {FILTERS.map((f) => {
-            const active = activeFilter === f;
-            return (
-              <Pressable
-                key={f}
-                onPress={() => setActiveFilter(f)}
-                style={[
-                  styles.chip,
-                  active ? styles.chipActive : styles.chipInactive,
-                ]}
-              >
-                <Text
-                  variant="footnote"
-                  rawColor={active ? C.textInverse : C.textSecondary}
-                  style={styles.chipText}
-                >
-                  {f}
-                </Text>
-              </Pressable>
-            );
-          })}
-
-          {/* Favorites pill */}
-          <Pressable
-            onPress={() => setShowFavoritesOnly((v) => !v)}
-            style={[
-              styles.chip,
-              showFavoritesOnly ? styles.chipSpecialActive : styles.chipInactive,
-            ]}
-          >
-            <Text
-              variant="footnote"
-              rawColor={showFavoritesOnly ? C.brandHero : C.textSecondary}
-              style={styles.chipText}
-            >
-              ⭐ Favorites
-            </Text>
+      {/* 2. Search Bar (Height 44) */}
+      <View style={styles.searchBar}>
+        <Search size={18} color={C.textTertiary} strokeWidth={2} />
+        <TextInput
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder="Search documents by title..."
+          placeholderTextColor={C.textTertiary}
+          style={styles.searchInput}
+        />
+        {searchQuery.length > 0 && (
+          <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
+            <X size={16} color={C.textTertiary} />
           </Pressable>
-
-          {/* Downloads pill */}
-          <Pressable
-            onPress={() => setShowDownloadsOnly((v) => !v)}
-            style={[
-              styles.chip,
-              showDownloadsOnly ? styles.chipSpecialActive : styles.chipInactive,
-            ]}
-          >
-            <Text
-              variant="footnote"
-              rawColor={showDownloadsOnly ? C.brandHero : C.textSecondary}
-              style={styles.chipText}
-            >
-              ⬇ Downloaded
-            </Text>
-          </Pressable>
-        </ScrollView>
-
-        {/* ── Sort Pills ── */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.sortRow}
-          style={styles.sortScroll}
-        >
-          {SORT_OPTIONS.map(({ key, label }) => {
-            const active = sortBy === key;
-            return (
-              <Pressable
-                key={key}
-                onPress={() => setSortBy(key)}
-                style={[
-                  styles.sortChip,
-                  active ? styles.sortChipActive : styles.sortChipInactive,
-                ]}
-              >
-                <Text
-                  variant="footnote"
-                  rawColor={active ? C.brandHero : C.textTertiary}
-                  style={styles.chipText}
-                >
-                  {label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-
-        {/* ── Loading Indicator ── */}
-        {isLoading && (
-          <GlassCard style={styles.loadingCard}>
-            <ActivityIndicator size="small" color={C.brandHero} />
-            <Text variant="footnote" rawColor={C.textSecondary} style={{ marginTop: 8 }}>
-              Loading your documents...
-            </Text>
-          </GlassCard>
         )}
+      </View>
 
-        {/* ── Error Banner ── */}
-        {error && (
-          <GlassCard style={styles.errorCard}>
-            <Text variant="headline" rawColor={C.error}>Unable to load library</Text>
-            <Text variant="footnote" rawColor={C.textTertiary} style={{ marginTop: 4, marginBottom: 12 }}>
-              {error.message || 'An error occurred fetching your documents.'}
-            </Text>
-            <Pressable onPress={() => refetch()} style={styles.retryBtn}>
-              <RefreshCw size={14} color={C.brandHero} />
-              <Text variant="caption" rawColor={C.brandHero}>Retry</Text>
+      {/* 3. Single Row of Filter Chips */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.chipsRow}
+        style={styles.chipsScroll}
+      >
+        {FILTERS.map((f) => {
+          const active = activeFilter === f;
+          return (
+            <Pressable
+              key={f}
+              onPress={() => setActiveFilter(f)}
+              style={[styles.chip, active ? styles.chipActive : styles.chipInactive]}
+            >
+              <Text
+                variant="caption"
+                rawColor={active ? C.textInverse : C.textSecondary}
+                style={styles.chipText}
+              >
+                {f}
+              </Text>
             </Pressable>
-          </GlassCard>
-        )}
+          );
+        })}
+      </ScrollView>
 
-        {/* ── List of Documents ── */}
-        {!isLoading && filteredItems.length > 0 && (
-          filteredItems.map((item) => {
-            const isReady = item.document.status === 'ready';
+      {/* 4. Loading State */}
+      {isLoading && (
+        <View style={styles.centerState}>
+          <ActivityIndicator size="small" color={C.brandHero} />
+          <Text variant="subhead" rawColor={C.textSecondary} style={{ marginTop: 12 }}>
+            Loading your documents...
+          </Text>
+        </View>
+      )}
+
+      {/* 5. Error State */}
+      {error && !isLoading && (
+        <GlassCard style={styles.errorCard} padding={14}>
+          <Text variant="headline" rawColor={C.error}>Unable to load library</Text>
+          <Text variant="footnote" rawColor={C.textTertiary} style={{ marginTop: 4, marginBottom: 12 }}>
+            {error.message || 'Check your internet connection and try again.'}
+          </Text>
+          <ShinyButton
+            label="Retry"
+            size="sm"
+            variant="secondary"
+            icon={<RefreshCw size={14} color={C.textPrimary} />}
+            onPress={() => refetch()}
+          />
+        </GlassCard>
+      )}
+
+      {/* 6. Document Rows (Standardized DocumentRow) */}
+      {!isLoading && !error && filteredItems.length > 0 && (
+        <View style={styles.listContainer}>
+          {filteredItems.map((item) => {
+            const isReady = item.document.status === 'ready' && Boolean(item.track);
             const isFailed = item.document.status === 'failed';
-            const isUploading = item.document.status === 'uploading';
-            const statusLabel = isReady
-              ? 'READY'
-              : isFailed
-              ? 'FAILED'
-              : isUploading
-              ? 'UPLOADING'
-              : 'QUEUED';
-            const statusColor = isReady ? C.success : isFailed ? C.error : C.warning;
-            const fileSizeMb = (item.document.file_size_bytes / (1024 * 1024)).toFixed(1);
-            const docType = item.document.mime_type.includes('pdf') ? 'PDF' : 'DOCX';
-            const durationLabel = item.track
-              ? `${Math.round(item.track.duration_seconds / 60)} min audio`
-              : `${item.document.page_count ?? 1} pages`;
-            const isFavorited = favoriteIds.has(item.document.id);
+            const isProcessing = item.document.status === 'uploaded' || item.document.status === 'uploading';
+            const isFav = favoriteIds.has(item.document.id);
 
             return (
-              <Pressable
+              <DocumentRow
                 key={item.document.id}
+                title={item.document.title}
+                originalFilename={item.document.original_filename}
+                mimeType={item.document.mime_type}
+                fileSizeBytes={item.document.file_size_bytes}
+                durationSeconds={item.track?.duration_seconds}
+                pageCount={item.document.page_count}
+                createdAt={item.document.created_at}
+                status={item.document.status}
+                isFavorite={isFav}
+                variant="full"
                 onPress={() => {
                   if (isReady && item.track) {
                     playTrack(item.track, item.document.title);
-                    router.push('/player' as Parameters<typeof router.push>[0]);
+                    router.push('/player' as any);
+                  } else if (isProcessing) {
+                    router.push('/(tabs)/home');
                   } else if (isFailed) {
-                    router.push('/(tabs)/upload');
+                    handleRegenerateAudio(item);
                   }
                 }}
-                style={styles.docPressable}
-              >
-                <GlassCard style={styles.docCard}>
-                  <View style={styles.docIcon}>
-                    <FileText size={20} color={C.brandHero} strokeWidth={2} />
-                  </View>
-                  <View style={styles.docCenter}>
-                    <Text variant="headline" rawColor={C.textPrimary} numberOfLines={1} ellipsizeMode="tail">
-                      {item.document.title}
-                    </Text>
-                    <Text variant="footnote" rawColor={C.textTertiary}>
-                      {docType} • {fileSizeMb} MB • {durationLabel}
-                    </Text>
-                  </View>
-                  <View style={styles.docRight}>
-                    <View
-                      style={[
-                        styles.statusChip,
-                        { borderColor: statusColor + '55', backgroundColor: statusColor + '20' },
-                      ]}
-                    >
-                      <Text variant="caption" rawColor={statusColor} style={styles.statusText}>
-                        {statusLabel}
-                      </Text>
-                    </View>
-                    {/* Star / Favorite button */}
-                    <Pressable
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        void toggleFavorite(item.document.id);
-                      }}
-                      hitSlop={8}
-                      style={{ padding: 4 }}
-                    >
-                      <Star
-                        size={16}
-                        color={isFavorited ? C.brandHero : C.textTertiary}
-                        fill={isFavorited ? C.brandHero : 'none'}
-                        strokeWidth={2}
-                      />
-                    </Pressable>
-                    <Pressable
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        setSelectedDoc(item.document);
-                      }}
-                      hitSlop={8}
-                      style={{ padding: 4 }}
-                    >
-                      <MoreVertical size={16} color={C.textTertiary} />
-                    </Pressable>
-                  </View>
-                </GlassCard>
-              </Pressable>
+                onToggleFavorite={() => toggleFavorite(item.document.id)}
+                onMenuPress={() => setActionItem(item)}
+              />
             );
-          })
-        )}
+          })}
+        </View>
+      )}
 
-        {/* ── Empty State ── */}
-        {!isLoading && filteredItems.length === 0 && !error && (
-          <EmptyState
-            pose="empty"
-            title={searchQuery ? 'No matching documents' : 'No documents in this view'}
-            message={
-              searchQuery
-                ? `No results found for "${searchQuery}". Try a different keyword.`
-                : 'Upload documents or adjust your filters to view audio explanations.'
-            }
-            actionLabel="Upload New Document"
-            onAction={() => router.push('/(tabs)/upload')}
-          />
-        )}
-      </ScrollView>
+      {/* 7. Empty State */}
+      {!isLoading && !error && filteredItems.length === 0 && (
+        <EmptyState
+          pose="empty"
+          title={searchQuery ? 'No documents found' : 'No documents in this view'}
+          message={
+            searchQuery
+              ? 'Try searching with a different title or keyword.'
+              : 'Upload a PDF or Word document to get started.'
+          }
+          actionLabel="Upload Document"
+          onAction={() => router.push('/(tabs)/upload')}
+        />
+      )}
 
-      {/* ── Document Actions Modal ── */}
-      <Modal
-        visible={Boolean(selectedDoc) && !isRenameOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setSelectedDoc(null)}
-      >
-        <Pressable style={styles.modalBackdrop} onPress={() => setSelectedDoc(null)}>
-          <GlassCard style={styles.actionSheetCard}>
-            <Text variant="headline" rawColor={C.textPrimary} numberOfLines={1} style={{ marginBottom: 12 }}>
-              {selectedDoc?.title}
+      {/* ── Sort Options Modal ── */}
+      <Modal visible={showSortModal} transparent animationType="fade">
+        <Pressable style={styles.modalOverlay} onPress={() => setShowSortModal(false)}>
+          <View style={styles.modalContent}>
+            <Text variant="headline" rawColor={C.textPrimary} style={{ marginBottom: 12 }}>
+              Sort Documents
+            </Text>
+            {SORT_OPTIONS.map((opt) => {
+              const selected = sortBy === opt.key;
+              return (
+                <Pressable
+                  key={opt.key}
+                  onPress={() => {
+                    setSortBy(opt.key);
+                    setShowSortModal(false);
+                  }}
+                  style={[styles.sortRow, selected && styles.sortRowSelected]}
+                >
+                  <Text variant="subhead" rawColor={selected ? C.brandHero : C.textPrimary}>
+                    {opt.label}
+                  </Text>
+                  {selected && <Check size={18} color={C.brandHero} strokeWidth={2.5} />}
+                </Pressable>
+              );
+            })}
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* ── Document Actions Action Sheet ── */}
+      <Modal visible={Boolean(actionItem)} transparent animationType="slide">
+        <Pressable style={styles.actionSheetOverlay} onPress={() => setActionItem(null)}>
+          <View style={styles.actionSheetContent}>
+            <View style={styles.actionSheetHandle} />
+            <Text variant="headline" rawColor={C.textPrimary} numberOfLines={1} style={{ marginBottom: 4 }}>
+              {actionItem?.document.title}
+            </Text>
+            <Text variant="caption" rawColor={C.textTertiary} style={{ marginBottom: 16 }}>
+              {actionItem?.document.original_filename}
             </Text>
 
+            {/* Quick Rename */}
             <Pressable
-              style={styles.sheetActionRow}
+              style={styles.sheetItem}
               onPress={() => {
-                setRenameText(selectedDoc?.title || '');
+                setRenameText(actionItem?.document.title || '');
                 setIsRenameOpen(true);
               }}
             >
-              <Edit2 size={18} color={C.textSecondary} />
-              <Text variant="subhead" rawColor={C.textPrimary}>Rename Title</Text>
+              <Edit2 size={18} color={C.textSecondary} strokeWidth={2} />
+              <Text variant="subhead" rawColor={C.textPrimary} style={{ marginLeft: 12, flex: 1 }}>
+                Rename Document
+              </Text>
             </Pressable>
 
+            {/* Export MP3 */}
+            {actionItem?.track && (
+              <Pressable
+                style={styles.sheetItem}
+                onPress={() => handleExportMp3(actionItem)}
+                disabled={isExportingMp3}
+              >
+                {isExportingMp3 ? (
+                  <ActivityIndicator size="small" color={C.brandHero} />
+                ) : (
+                  <Share2 size={18} color={C.brandHero} strokeWidth={2} />
+                )}
+                <Text variant="subhead" rawColor={C.brandHero} style={{ marginLeft: 12, flex: 1, fontWeight: '700' }}>
+                  {isExportingMp3 ? 'Exporting MP3...' : 'Export MP3 Audio'}
+                </Text>
+              </Pressable>
+            )}
+
+            {/* Download / Remove Offline */}
+            {actionItem?.track && (
+              <Pressable
+                style={styles.sheetItem}
+                onPress={() => {
+                  handleToggleDownload(actionItem);
+                  setActionItem(null);
+                }}
+              >
+                <Download size={18} color={C.textSecondary} strokeWidth={2} />
+                <Text variant="subhead" rawColor={C.textPrimary} style={{ marginLeft: 12, flex: 1 }}>
+                  {downloadedIds.has(actionItem.track.id) ? 'Remove from Offline' : 'Download for Offline'}
+                </Text>
+              </Pressable>
+            )}
+
+            {/* Regenerate Audio */}
             <Pressable
-              style={styles.sheetActionRow}
-              onPress={() => {
-                if (selectedDoc) handleDeleteDocument(selectedDoc);
-              }}
+              style={styles.sheetItem}
+              onPress={() => handleRegenerateAudio(actionItem!)}
             >
-              <Trash2 size={18} color={C.error} />
-              <Text variant="subhead" rawColor={C.error}>Delete Document</Text>
+              <RotateCcw size={18} color={C.textSecondary} strokeWidth={2} />
+              <Text variant="subhead" rawColor={C.textPrimary} style={{ marginLeft: 12, flex: 1 }}>
+                Regenerate Audio Explanation
+              </Text>
             </Pressable>
-          </GlassCard>
+
+            {/* Delete Document */}
+            <Pressable
+              style={[styles.sheetItem, { borderTopWidth: 1, borderTopColor: 'rgba(255, 255, 255, 0.08)', marginTop: 8 }]}
+              onPress={() => handleDeleteDocument(actionItem!)}
+            >
+              <Trash2 size={18} color={C.error} strokeWidth={2} />
+              <Text variant="subhead" rawColor={C.error} style={{ marginLeft: 12, flex: 1 }}>
+                Delete Document
+              </Text>
+            </Pressable>
+          </View>
         </Pressable>
       </Modal>
 
       {/* ── Rename Modal ── */}
-      <Modal
-        visible={isRenameOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setIsRenameOpen(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <GlassCard style={styles.renameCard}>
-            <Text variant="title3" rawColor={C.textPrimary} style={{ marginBottom: 12 }}>
+      <Modal visible={isRenameOpen} transparent animationType="fade">
+        <Pressable style={styles.modalOverlay} onPress={() => setIsRenameOpen(false)}>
+          <View style={styles.modalContent}>
+            <Text variant="headline" rawColor={C.textPrimary} style={{ marginBottom: 12 }}>
               Rename Document
             </Text>
             <TextInput
               value={renameText}
               onChangeText={setRenameText}
-              placeholder="Enter new title"
-              placeholderTextColor={C.textTertiary}
               style={styles.renameInput}
               autoFocus
+              placeholder="Enter new title"
+              placeholderTextColor={C.textTertiary}
             />
-            <View style={styles.renameBtnRow}>
-              <Pressable
-                onPress={() => setIsRenameOpen(false)}
-                style={styles.renameCancelBtn}
-              >
-                <Text variant="headline" rawColor={C.textSecondary}>Cancel</Text>
+            <View style={styles.modalButtons}>
+              <Pressable style={styles.cancelBtn} onPress={() => setIsRenameOpen(false)}>
+                <Text variant="subhead" rawColor={C.textSecondary}>Cancel</Text>
               </Pressable>
-              <ShinyButton
-                label="Save Title"
-                variant="primary"
-                size="md"
-                loading={isSubmittingRename}
+              <Pressable
+                style={[styles.saveBtn, isSubmittingRename && { opacity: 0.6 }]}
                 onPress={handleSaveRename}
-              />
+                disabled={isSubmittingRename}
+              >
+                {isSubmittingRename ? (
+                  <ActivityIndicator size="small" color={C.textInverse} />
+                ) : (
+                  <Text variant="subhead" rawColor={C.textInverse} style={{ fontWeight: '700' }}>Save</Text>
+                )}
+              </Pressable>
             </View>
-          </GlassCard>
-        </View>
+          </View>
+        </Pressable>
       </Modal>
-    </View>
+    </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#09161B' },
-  scroll: { flex: 1 },
-  content: { paddingHorizontal: 16 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  headerTitle: { fontWeight: '700' },
-  filterIconBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: C.canvasSurfaceRaised,
+  header: {
+    height: 44,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  headerTitle: {
+    fontWeight: '800',
+    fontSize: 18,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerIconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderWidth: 1,
-    borderColor: C.glassBorder,
+    borderColor: 'rgba(255, 255, 255, 0.10)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   searchBar: {
+    width: '100%',
+    alignSelf: 'stretch',
+    height: 44,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: C.canvasSurfaceRaised,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    gap: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderWidth: 1,
-    borderColor: C.glassBorder,
-    marginBottom: 16,
+    borderColor: 'rgba(255, 255, 255, 0.10)',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    marginBottom: 10,
+    gap: 8,
   },
-  searchInput: { flex: 1, color: C.textPrimary, fontSize: 14 },
-  chipsScroll: { marginBottom: 10 },
-  chipsRow: { gap: 8 },
-  sortScroll: { marginBottom: 16 },
-  sortRow: { gap: 8 },
-  chip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1 },
-  chipActive: { backgroundColor: C.brandHero, borderColor: C.brandHero },
-  chipInactive: { backgroundColor: C.canvasSurfaceRaised, borderColor: C.glassBorder },
-  chipSpecialActive: {
-    backgroundColor: 'rgba(146,247,2,0.12)',
-    borderColor: C.brandHero,
-  },
-  chipText: { fontWeight: '600', fontSize: 12 },
-  sortChip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, borderWidth: 1 },
-  sortChipActive: {
-    backgroundColor: 'rgba(146,247,2,0.12)',
-    borderColor: C.brandHero,
-  },
-  sortChipInactive: { backgroundColor: C.canvasSurfaceRaised, borderColor: C.glassBorder },
-  loadingCard: { padding: 24, borderRadius: 16, alignItems: 'center', marginBottom: 20 },
-  errorCard: { padding: 16, borderRadius: 16, marginBottom: 20, borderColor: 'rgba(255,82,82,0.3)' },
-  retryBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  docPressable: { marginBottom: 8 },
-  docCard: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 16, gap: 12, minHeight: 56 },
-  docIcon: { width: 40, height: 40, borderRadius: 10, backgroundColor: C.canvasSurfaceRaised, alignItems: 'center', justifyContent: 'center' },
-  docCenter: { flex: 1, gap: 2 },
-  docRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  statusChip: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, borderWidth: 1 },
-  statusText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
-  modalBackdrop: {
+  searchInput: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    minWidth: 0,
+    color: '#F4F7F2',
+    fontSize: 13,
+  },
+  chipsScroll: {
+    maxHeight: 34,
+    marginBottom: 12,
+  },
+  chipsRow: {
+    flexDirection: 'row',
+    gap: 6,
+    paddingRight: 16,
+  },
+  chip: {
+    height: 32,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chipActive: {
+    backgroundColor: '#8EF20F',
+  },
+  chipInactive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.10)',
+  },
+  chipText: {
+    fontWeight: '700',
+    fontSize: 11,
+  },
+  centerState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 36,
+  },
+  errorCard: {
+    marginVertical: 12,
+  },
+  listContainer: {
+    gap: 8,
+  },
+  rowPressable: {
+    marginBottom: 2,
+  },
+  docRow: {
+    height: 62,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  docIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: 'rgba(142, 242, 15, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(142, 242, 15, 0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  docCenterCol: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  metaText: {
+    fontSize: 10,
+    color: '#6B828F',
+  },
+  docRightCol: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginLeft: 6,
+  },
+  chipsCluster: {
+    alignItems: 'flex-end',
+    gap: 2,
+  },
+  tagPill: {
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+  },
+  tagText: {
+    fontSize: 8,
+    fontWeight: '700',
+  },
+  statusPill: {
+    borderWidth: 1,
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  statusPillText: {
+    fontSize: 8,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  actionBtn: {
+    padding: 6,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
+    paddingHorizontal: 24,
   },
-  actionSheetCard: { width: '100%', padding: 20, borderRadius: 20, gap: 16 },
-  sheetActionRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 },
-  renameCard: { width: '100%', padding: 24, borderRadius: 20, gap: 16 },
-  renameInput: {
-    backgroundColor: C.canvasSurfaceRaised,
-    borderRadius: 12,
-    padding: 12,
-    color: C.textPrimary,
-    fontSize: 16,
+  modalContent: {
+    width: '100%',
+    backgroundColor: '#0D1E24',
     borderWidth: 1,
-    borderColor: C.glassBorder,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 18,
+    padding: 16,
   },
-  renameBtnRow: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 16 },
-  renameCancelBtn: { paddingVertical: 10, paddingHorizontal: 14 },
+  sortRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  sortRowSelected: {
+    backgroundColor: 'rgba(142, 242, 15, 0.08)',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+  },
+  actionSheetOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'flex-end',
+  },
+  actionSheetContent: {
+    backgroundColor: '#0D1E24',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    padding: 18,
+    paddingBottom: 36,
+  },
+  actionSheetHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignSelf: 'center',
+    marginBottom: 12,
+  },
+  sheetItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  renameInput: {
+    width: '100%',
+    alignSelf: 'stretch',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderRadius: 10,
+    color: '#F4F7F2',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    marginBottom: 16,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+  },
+  cancelBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  saveBtn: {
+    backgroundColor: '#8EF20F',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

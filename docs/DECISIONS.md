@@ -340,3 +340,82 @@
   2. Tested flows cover end-to-end paths from cold launch, onboarding, authentication, document generation, player controls, to profile management.
 
 
+
+
+---
+
+## Phase 7 & 7B Decisions (Audio Pipeline, Layout Root Cause, Compact Tokens)
+
+### 21. MP3 Audio Format Standard & Loudness Normalization
+- **Decision:** Shifted primary audio format from AAC/.m4a to broadcast-standard MP3 (`audio/mpeg`). Synthesized via `ffmpeg` with `libmp3lame`: mono, 24 kHz sample rate (aligned with Gemini TTS output), 96 kbps CBR default, loudness normalized to -16 LUFS with -1.5 dB true peak.
+- **ID3v2 Metadata:** Automated injection of ID3v2 tags (document title, artist "Zukai", album "Zukai Audio", language, and chapter markers). Audio duration is extracted via `ffprobe` on the assembled file, avoiding client estimates.
+
+### 22. Compact Design Tokens & Elimination of Card Padding Inflation
+- **Root Cause:** Analysis of `GlassCard` revealed stacked padding between the wrapper card and inner container, inflating card heights to >120dp with content inset 50–65px.
+- **Decision:** Standardized on compact edtech tokens: screen padding 16dp, card padding 12dp, card corner radius 16dp, inner gap 8dp, card gap 8–10dp, list row height 60–64dp, stat tile height 76dp, button heights 36dp (sm), 44dp (md), and 52dp (lg). Highlights and gloss overlays set to `pointerEvents="none"`.
+
+### 23. Centralized Clearance Container (`ScreenContainer`)
+- **Decision:** Built `ScreenContainer` to compute guaranteed clearance over the floating tab bar (68dp) and mini-player (66dp) plus device bottom insets. Replaced ad-hoc per-screen bottom paddings to ensure lists and action buttons are never obscured.
+
+### 24. Tab Bar Hiding on Flow Screens
+- **Decision:** Conditionally unmount the floating tab bar during active configuration in `upload.tsx` (`useUploadStore` active upload / configuration state), as well as on processing, player, and modal routes. Pinned bottom CTAs with safe-area padding ensure clear user affordance.
+
+### 25. Hardened Tab Bar Background & Overflow Prevention
+- **Decision:** Enhanced `ZukaiTabBar` pill background with `rgba(11, 20, 24, 0.94)` solid dark tint fallback behind `BlurView`. Constrained tab item labels to single-line with ellipsis to prevent clipping of "Settings" on 360dp narrow screens.
+
+### 26. Real Gemini Neural TTS Model Discovery
+- **Decision:** Identified and integrated Google's official neural TTS endpoint `gemini-2.5-flash-preview-tts` (generating 24 kHz 16-bit mono PCM). Prompts are prefixed with `Read aloud:` directives as required by the model. Implemented streaming PCM-to-WAV conversion prior to `ffmpeg` mastering.
+
+### 27. Autonomous Worker-Side Stuck Job Reaper
+- **Decision:** Added `reapStuckJobs()` running on a 30-second interval within the worker daemon. Detects jobs with `status = 'processing'` whose `heartbeat_at` is older than 10 minutes (indicating an ungraceful crash or container restart) and automatically fails or requeues them.
+
+### 28. Honest Audio & Notification Disclosure
+- **Decision:** Replaced any generic or confusing permission prompts with `AllowAudioSheet`: an honest disclosure sheet explaining lockscreen/Bluetooth controls and requesting `POST_NOTIFICATIONS`. No fake speaker permissions are ever requested.
+
+### 29. Clear Metric Separation & Real Plan Tier Display
+- **Decision:** Resolved UI metric confusion by strictly separating "Generated" (count of documents synthesized, blue icon) from "Listened" (total minutes of playback, green icon). Profile cards display the user's live plan tier (Free by default) with an explicit "Upgrade" CTA navigating to the Paywall.
+
+### 30. Offline Downloads & History Architecture
+- **Decision:** Implemented `downloadManager` for local MP3 caching with an offline index, dedicated `/downloads` screen with storage usage summary and batch deletion, and `/history` screen categorizing listened tracks by Today, Yesterday, and Earlier.
+
+---
+
+## Phase 7C Decisions (Multi-Model Architecture, Quota Router & Unified DocumentRow)
+
+### 31. GlassCard Direct Flex Layout Architecture (Root-Cause Fix for Collapsed Rows)
+- **Root Cause:** In earlier builds, `GlassCard` nested children inside an inner `<View style={contentPaddingStyle}>` while applying caller styles (such as `flexDirection: 'row'` and `height: 60`) to an outer container. This defaulted inner layout to `flexDirection: 'column'`, causing children inside fixed-height rows to vertically stack and compress `flex: 1` middle containers to zero height, wiping out document titles and metadata.
+- **Decision:** Restructured `GlassCard` so that backdrop effects (`BlurView`, deep glass fills, and gloss gradient overlays) are rendered with `StyleSheet.absoluteFill` and `pointerEvents="none"`. Caller children are rendered directly within `styles.container`, guaranteeing that any flex directions, gaps, and alignments work predictably across all screens.
+
+### 32. Standardized `<DocumentRow>` Component
+- **Decision:** Replaced inconsistent per-screen document cards with a single shared `<DocumentRow>` component used across Home (Recent), Library, History, Downloads, and Search.
+- **Specifications:** Full card width, `height: 'auto'`, `minHeight: 64`, border radius 16, horizontal layout (`flexDirection: 'row'`, `alignItems: 'center'`). Left 40x40 centered file-type icon tile (PDF, DOCX, PPTX, TXT); middle (`flex: 1`, `minWidth: 0`) with 1-line semibold title, meta line (`type • size • duration • date`), and 22dp chips row (status, language, depth); right vertically centered action buttons with 48dp minimum touch targets.
+
+### 33. Multi-Model Gemini Registry & Task-Specific Fallback Routing
+- **Constraint:** Gemini free-tier daily quotas on primary models (e.g. Gemini 3.6 Flash at 20 RPD, Gemini 2.5 Flash at 20 RPD, and Gemini 2.5 Flash TTS at 10 RPD) are quickly exhausted during batch processing.
+- **Decision:** Built a multi-model registry configured via `/worker/src/ai/modelsConfig.json` covering 13 models across text, TTS, and Live Audio families. Task priority pipelines route requests dynamically:
+  - `outline`: `gemini-2.5-flash` -> `gemini-3.6-flash` -> `gemini-3.8-flash` -> `gemini-3-flash` -> `gemini-3.5-flash-lite` -> `gemini-3.1-flash-lite` -> `gemini-1.5-flash`
+  - `script`: `gemini-3.5-flash-lite` -> `gemini-3.1-flash-lite` -> `gemini-2.5-flash` -> `gemini-3.6-flash` -> `gemini-3.8-flash` -> `gemini-3-flash` -> `gemini-2.5-flash-lite` -> `gemini-1.5-flash`
+  - `voice`: `gemini-2.5-flash-preview-tts` -> `gemini-2.5-flash-live` -> `gemini-3-flash-live` -> `gemini-3.8-live` -> `google-cloud-tts`
+- **Fallback Behavior:** 429 errors or quota exhaustion trigger automatic model cooldown and instantaneous fallback to the next candidate in the pipeline without failing the user's job.
+
+### 34. Gemini Live Audio Fallback with Verbatim Guard
+- **Specification:** When neural TTS quotas are exhausted, the worker falls back to Gemini Live Audio dialog models (`gemini-2.5-flash-live`, `gemini-3-flash-live`, `gemini-3.8-live`).
+- **Verbatim Guard:** Implemented Levenshtein-based Word Error Rate (WER) scoring. If a Live Audio model deviates from the verbatim script (WER > 8%), it automatically retries with a strict system instruction.
+
+### 35. Pacific Midnight Quota Reset Synchronization
+- **Decision:** Built `getPacificDayStart()` to synchronize sliding-window daily RPD quota resets with Google AI Studio's authoritative quota window (00:00 PST / 08:00 UTC).
+
+### 36. Intermediate Checkpointing via `job_artifacts`
+- **Decision:** Created table `job_artifacts` storing intermediate stage outputs (`extracted_text`, `outline`, `script`, `audio_chunk`). If a job enters `waiting_for_capacity` or the worker crashes, execution resumes from the saved checkpoint rather than re-executing completed Gemini operations.
+
+### 37. Content-Hash (SHA-256) Deduplication
+- **Decision:** Added `content_sha256` indexing on `documents`. Before extracting or synthesizing, the worker checks if an identical document with the same language, depth, and voice was already processed for the same organization/user. If found, the existing audio track is linked immediately with 0 Gemini tokens consumed.
+
+### 38. `waiting_for_capacity` State UX
+- **Decision:** When all priority models for a pipeline task are in quota cooldown, jobs transition to `waiting_for_capacity` with an autonomous resume window. Mobile UI presents a calm, non-blocking amber card ("High demand right now. Your audio will continue automatically") with dynamic ETA and cancel affordance.
+
+### 39. Native Audio Engine & Binary I/O Modernization (`expo-audio` & `expo-blob`)
+- **Root Cause of Missing Audio Playback:** In modern Expo (SDK 58 / React Native 0.88), the legacy `expo-av` module was deprecated and its native module `ExponentAV` was removed from the runtime binary. This caused `playbackStore.ts` to fail during initialization with `Cannot find native module 'ExponentAV'`, resulting in silent failure where audio tracks never generated sound.
+- **Decision:** Migrated global playback engine to **`expo-audio`** (`~58.0.12`), Expo's official modern audio package. Configured `setAudioModeAsync` for background playback, implemented `createAudioPlayer` with 200ms `updateInterval` for sentence-level karaoke transcript syncing, and hooked reactive status listeners.
+- **Binary Blob Performance (`expo-blob`):** Installed **`expo-blob`** (`^58.0.3`) providing standards-compliant, native-backed `Blob` handling to eliminate base64 bridge serialization overhead during Supabase Storage downloads and large audio streaming operations.
+

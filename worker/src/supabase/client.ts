@@ -12,3 +12,7 @@ export const supabaseAdmin = createClient(
   }
 );
 
+// Worker alias for admin client
+export const supabaseWorker = supabaseAdmin;
+
+
