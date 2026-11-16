@@ -55,7 +55,7 @@ export default function SplashScreen() {
     dot3.value = withDelay(1200, withRepeat(withSequence(withTiming(1, { duration: 400 }), withTiming(0.3, { duration: 400 })), -1, false));
 
     const timer = setTimeout(() => {
-      router.replace('/(onboarding)/onboarding');
+      return router.replace('/(onboarding)/onboarding');
     }, 2800);
     return () => clearTimeout(timer);
   }, []);

@@ -33,6 +33,13 @@ export interface TranscriptSentence {
   text: string;
 }
 
+export interface ProviderChunkInfo {
+  chunkIndex: number;
+  provider: string;
+  modelId: string;
+  isRealSpeech: boolean;
+}
+
 export interface SynthesizedAudioResult {
   audioBuffer: Buffer;
   format: 'mp3' | 'm4a' | 'wav';
@@ -45,6 +52,8 @@ export interface SynthesizedAudioResult {
     full_text: string;
   };
   modelsUsed?: string[];
+  providersUsed?: ProviderChunkInfo[];
+  isVerifiedRealSpeech?: boolean;
 }
 
 export interface EncodeAudioOptions {
@@ -251,6 +260,7 @@ export async function synthesizeSpeech(
   const allSegments: TranscriptSentence[] = [];
   const rawTextParts: string[] = [];
   const modelsUsed: Set<string> = new Set();
+  const providersUsed: ProviderChunkInfo[] = [];
 
   let currentTimeMs = 0;
 
@@ -266,6 +276,14 @@ export async function synthesizeSpeech(
       const cached = await getArtifact(jobId, 'audio_chunk', cIdx);
       if (cached && cached.base64Pcm) {
         chapterPcm = Buffer.from(cached.base64Pcm, 'base64');
+        const model = cached.model || 'cached-artifact';
+        modelsUsed.add(model);
+        providersUsed.push({
+          chunkIndex: cIdx,
+          provider: model.includes('live') ? 'gemini-live' : 'gemini-tts',
+          modelId: model,
+          isRealSpeech: true,
+        });
         logger.info({ jobId, chapterIndex: cIdx }, 'Resumed audio chunk from cached job artifact');
       }
     }
@@ -273,35 +291,52 @@ export async function synthesizeSpeech(
     // 2. Synthesize with multi-model router fallback if not cached
     if (!chapterPcm) {
       if (config.GEMINI_API_KEY && config.GEMINI_API_KEY.length > 10) {
-        try {
-          const { result: pcm, modelId } = await executeWithFallback('voice', async (model) => {
-            if (model.kind === 'live-audio') {
-              const liveRes = await callGeminiLiveAudio(model.id, ch.text, geminiVoice);
-              return { result: liveRes.pcmBuffer, tokensUsed: Math.round(ch.text.length / 4) };
-            } else {
-              // Direct TTS model
-              const ttsRes = await callGeminiTts(ch.text, geminiVoice);
-              return { result: ttsRes, tokensUsed: Math.round(ch.text.length / 4) };
-            }
-          });
-
-          chapterPcm = pcm;
-          modelsUsed.add(modelId);
-
-          if (jobId) {
-            await saveArtifact(jobId, 'audio_chunk', cIdx, 'audio_pcm', {
-              base64Pcm: chapterPcm.toString('base64'),
-              model: modelId,
-            });
+        const { result: pcm, modelId } = await executeWithFallback('voice', async (model) => {
+          if (model.kind === 'live-audio') {
+            const liveRes = await callGeminiLiveAudio(model.id, ch.text, geminiVoice);
+            return { result: liveRes.pcmBuffer, tokensUsed: Math.round(ch.text.length / 4) };
+          } else {
+            // Direct TTS model
+            const ttsRes = await callGeminiTts(ch.text, geminiVoice);
+            return { result: ttsRes, tokensUsed: Math.round(ch.text.length / 4) };
           }
-        } catch (err: any) {
-          logger.warn({ chapterIndex: cIdx, err: err?.message }, 'Voice synthesis failed, falling back to local sine synth');
+        });
+
+        chapterPcm = pcm;
+        modelsUsed.add(modelId);
+        providersUsed.push({
+          chunkIndex: cIdx,
+          provider: modelId.includes('live') ? 'gemini-live' : 'gemini-tts',
+          modelId,
+          isRealSpeech: true,
+        });
+
+        if (jobId) {
+          await saveArtifact(jobId, 'audio_chunk', cIdx, 'audio_pcm', {
+            base64Pcm: chapterPcm.toString('base64'),
+            model: modelId,
+          });
         }
       }
     }
 
-    // 3. Fallback sine synth for offline tests if all models fail
+    // 3. Guard against fake audio:
+    // Sine synth is strictly disallowed in production and is rejected unless
+    // process.env.NODE_ENV !== 'production' && process.env.ALLOW_TEST_SINE_SYNTH === 'true'
     if (!chapterPcm) {
+      const isAllowedTestSynth =
+        process.env.NODE_ENV !== 'production' &&
+        process.env.ALLOW_TEST_SINE_SYNTH === 'true';
+
+      if (!isAllowedTestSynth) {
+        throw new WorkerError(
+          WORKER_ERROR_CODES.AI_UNAVAILABLE,
+          `Real speech generation failed for chapter ${cIdx + 1}. Production jobs cannot complete with synthetic tones.`,
+          true
+        );
+      }
+
+      // Offline unit test synthetic tone
       const estSeconds = Math.max(3, Math.round(ch.text.split(/\s+/).length / 2.5));
       const totalSamples = estSeconds * sampleRate;
       chapterPcm = Buffer.alloc(totalSamples * 2);
@@ -309,6 +344,12 @@ export async function synthesizeSpeech(
         const val = Math.round(Math.sin((2 * Math.PI * 440 * s) / sampleRate) * 8000);
         chapterPcm.writeInt16LE(val, s * 2);
       }
+      providersUsed.push({
+        chunkIndex: cIdx,
+        provider: 'test-sine-synth',
+        modelId: 'offline-test-sine',
+        isRealSpeech: false,
+      });
     }
 
     pcmBuffers.push(chapterPcm);
@@ -384,5 +425,7 @@ export async function synthesizeSpeech(
       full_text: rawTextParts.join(' '),
     },
     modelsUsed: Array.from(modelsUsed),
+    providersUsed,
+    isVerifiedRealSpeech: providersUsed.every((p) => p.isRealSpeech),
   };
 }

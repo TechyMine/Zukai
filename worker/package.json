@@ -16,7 +16,9 @@
     "eval:gate": "tsx eval/evalRunner.ts --gate",
     "feedback:report": "tsx src/scripts/feedbackReport.ts",
     "doctor": "tsx src/scripts/doctor.ts",
-    "quota:status": "tsx src/scripts/quotaStatus.ts"
+    "quota:status": "tsx src/scripts/quotaStatus.ts",
+    "chaos": "tsx src/scripts/chaos.ts",
+    "audit:fake-audio": "tsx src/scripts/auditFakeAudio.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",
@@ -33,7 +35,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@types/node": "^22.7.4",
+    "@types/node": "^22.20.5",
     "@types/pdf-parse": "^1.1.4",
     "tsx": "^4.19.1",
     "typescript": "^5.6.2"

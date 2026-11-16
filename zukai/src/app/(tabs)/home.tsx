@@ -305,7 +305,7 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* 5. In-Progress Jobs Banner (Compact) */}
+      {/* 5. In-Progress / Paused Jobs Banner (Compact) */}
       {activeJobs.length > 0 && (
         <Pressable
           style={styles.jobsBanner}
@@ -313,7 +313,9 @@ export default function HomeScreen() {
         >
           <PulsingDot />
           <Text variant="subhead" rawColor={C.textPrimary} style={{ flex: 1, marginLeft: 8 }}>
-            {`${activeJobs.length} explanation${activeJobs.length > 1 ? 's' : ''} generating…`}
+            {activeJobs.some((j) => j.status === 'waiting_for_capacity')
+              ? 'AI voice catching breath • Resuming automatically'
+              : `${activeJobs.length} explanation${activeJobs.length > 1 ? 's' : ''} generating…`}
           </Text>
           <ChevronRight size={16} color={C.textTertiary} />
         </Pressable>

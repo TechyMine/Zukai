@@ -1,4 +1,5 @@
 import { supabaseAdmin } from './client.js';
+import { ProviderChunkInfo } from '../synthesis/ttsEngine.js';
 
 export interface ClaimedJob {
   job_id: string;
@@ -12,6 +13,18 @@ export interface ClaimedJob {
   document_storage_path: string;
   mime_type: string;
   file_size_bytes: number;
+  /**
+   * Resumable state: e.g. { unit: 'voice', done: 4, total: 11 }
+   */
+  step_detail?: Record<string, unknown> | null;
+  /**
+   * Number of times this job has paused for capacity.
+   */
+  capacity_waits?: number;
+  /**
+   * ISO timestamp after which a waiting_for_capacity job may be re-claimed.
+   */
+  resume_at?: string | null;
 }
 
 export interface ChapterInput {
@@ -79,7 +92,7 @@ export async function heartbeatJob(
   return Boolean(data);
 }
 
-export async function completeJob(params: CompleteJobParams): Promise<any> {
+export async function completeJob(params: CompleteJobParams): Promise<unknown> {
   const { data, error } = await supabaseAdmin.rpc('complete_job', {
     p_job_id: params.jobId,
     p_storage_path: params.storagePath,
@@ -87,8 +100,8 @@ export async function completeJob(params: CompleteJobParams): Promise<any> {
     p_format: params.format,
     p_bitrate_kbps: params.bitrateKbps,
     p_file_size_bytes: params.fileSizeBytes,
-    p_chapters: params.chapters as any,
-    p_transcripts: params.transcripts as any,
+    p_chapters: params.chapters as unknown,
+    p_transcripts: params.transcripts as unknown,
     p_input_tokens: params.inputTokens ?? 0,
     p_output_tokens: params.outputTokens ?? 0,
     p_tts_characters: params.ttsCharacters ?? 0,
@@ -106,7 +119,7 @@ export async function failJob(
   jobId: string,
   errorCode: string,
   errorMessage: string
-): Promise<any> {
+): Promise<unknown> {
   const { data, error } = await supabaseAdmin.rpc('fail_job', {
     p_job_id: jobId,
     p_error_code: errorCode,
@@ -120,3 +133,61 @@ export async function failJob(
   return data;
 }
 
+/**
+ * Marks a job as waiting_for_capacity with a typed resume timestamp.
+ */
+export async function markJobWaitingForCapacity(
+  jobId: string,
+  resumeAt: Date,
+  reason: string
+): Promise<void> {
+  const resumeAtIso = resumeAt.toISOString();
+  const { error } = await supabaseAdmin
+    .from('audio_jobs')
+    .update({
+      status: 'waiting_for_capacity',
+      current_step: 'Our AI voice is catching its breath. Resuming automatically.',
+      resume_at: resumeAtIso,
+      waiting_until: resumeAtIso,
+      waiting_reason: reason,
+    })
+    .eq('id', jobId);
+
+  if (error) {
+    throw new Error(`markJobWaitingForCapacity error: ${error.message}`);
+  }
+}
+
+/**
+ * Persists the resumable pipeline unit progress into audio_jobs.step_detail.
+ */
+export async function updateJobStepDetail(
+  jobId: string,
+  detail: Record<string, unknown>
+): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from('audio_jobs')
+    .update({ step_detail: detail })
+    .eq('id', jobId);
+
+  if (error) {
+    throw new Error(`updateJobStepDetail error: ${error.message}`);
+  }
+}
+
+/**
+ * Persists providers_used (which models synthesized which chunks) into audio_jobs.
+ */
+export async function updateJobProvidersUsed(
+  jobId: string,
+  providers: ProviderChunkInfo[]
+): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from('audio_jobs')
+    .update({ providers_used: providers as unknown })
+    .eq('id', jobId);
+
+  if (error) {
+    throw new Error(`updateJobProvidersUsed error: ${error.message}`);
+  }
+}

@@ -1,11 +1,32 @@
 /**
  * ZUKAI MASCOT ASSET INDEX
- * Maps each pose name to its require'd PNG image.
- * Update this file as new poses are added.
+ * Maps all 20 approved Zuke bot poses to their required images.
+ * Implements the 20-pose EdTech character specification.
  */
 
 export type MascotPose =
   | 'base'
+  | 'wave'
+  | 'reading'
+  | 'headphones'
+  | 'lightbulb'
+  | 'typing'
+  | 'carrying_document'
+  | 'trophy'
+  | 'graduation_cap'
+  | 'flame'
+  | 'hourglass'
+  | 'coffee_break'
+  | 'sleeping'
+  | 'confused'
+  | 'download'
+  | 'clock'
+  | 'star'
+  | 'wrench'
+  | 'crown'
+  | 'pointing'
+  | 'thumbs_up'
+  // Backward compatibility aliases
   | 'welcome'
   | 'uploading'
   | 'thinking'
@@ -16,11 +37,30 @@ export type MascotPose =
   | 'paywall'
   | 'offline';
 
-// Image requires — Metro bundler resolves static require() at build time
-// Poses not yet generated fall back to the base asset.
 export const mascotImages: Record<MascotPose, number> = {
   base: require('./_base.png'),
-  // These will be replaced once individual pose PNGs are generated:
+  wave: require('./_base.png'),
+  reading: require('./_base.png'),
+  headphones: require('./_base.png'),
+  lightbulb: require('./_base.png'),
+  typing: require('./_base.png'),
+  carrying_document: require('./_base.png'),
+  trophy: require('./_base.png'),
+  graduation_cap: require('./_base.png'),
+  flame: require('./_base.png'),
+  hourglass: require('./_base.png'),
+  coffee_break: require('./_base.png'),
+  sleeping: require('./_base.png'),
+  confused: require('./_base.png'),
+  download: require('./_base.png'),
+  clock: require('./_base.png'),
+  star: require('./_base.png'),
+  wrench: require('./_base.png'),
+  crown: require('./_base.png'),
+  pointing: require('./_base.png'),
+  thumbs_up: require('./_base.png'),
+
+  // Aliases
   welcome: require('./_base.png'),
   uploading: require('./_base.png'),
   thinking: require('./_base.png'),
@@ -31,4 +71,3 @@ export const mascotImages: Record<MascotPose, number> = {
   paywall: require('./_base.png'),
   offline: require('./_base.png'),
 };
-

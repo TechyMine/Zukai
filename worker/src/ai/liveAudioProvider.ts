@@ -1,14 +1,15 @@
 /**
  * ZUKAI LIVE AUDIO PROVIDER & VERBATIM GUARD
  * Location: /worker/src/ai/liveAudioProvider.ts
- * Uses Gemini Live / Audio Dialog models as high-volume fallback for TTS narration
- * with strict verbatim verification (Word Error Rate <= 8%).
+ * Uses Gemini Live / Audio Dialog models via WebSocket bidiGenerateContent streaming
+ * with fallback to REST audio generation and strict verbatim verification (Word Error Rate <= 8%).
  */
 
 import { config } from '../config.js';
 import { logger } from '../logger.js';
 import { WorkerError, WORKER_ERROR_CODES } from '../errors.js';
 import { pcmToWav } from '../synthesis/ttsEngine.js';
+import { classifyGoogleError } from './errorClassifier.js';
 
 export interface LiveAudioResult {
   pcmBuffer: Buffer;
@@ -65,20 +66,162 @@ export function calculateWordErrorRate(reference: string, hypothesis: string): n
 }
 
 /**
- * Calls Gemini with AUDIO response modality using the Live Audio / Dialog model family
+ * Calls Gemini Live API using official WebSocket bidiGenerateContent protocol
  */
-export async function callGeminiLiveAudio(
+async function callGeminiLiveWebSocket(
   modelId: string,
   text: string,
   voiceName: string,
-  strictRetry = false
-): Promise<LiveAudioResult> {
-  const systemPrompt = strictRetry
-    ? 'CRITICAL SYSTEM INSTRUCTION: You are a strict text-to-speech synthesizer. Output audio ONLY. Read the following text VERBATIM without adding, omitting, explaining, or repeating any words.'
-    : 'You are a text-to-speech reader. Read the provided text exactly, word for word, in a calm friendly teaching voice. Do not add, skip, summarize or comment. Output audio only.';
+  systemPrompt: string
+): Promise<{ pcmBuffer: Buffer; transcription: string }> {
+  const WebSocketCtor = (globalThis as any).WebSocket;
+  if (!WebSocketCtor) {
+    throw new WorkerError(
+      WORKER_ERROR_CODES.INTERNAL_ERROR,
+      'WebSocket is not available in current Node runtime',
+      false
+    );
+  }
 
+  const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${config.GEMINI_API_KEY}`;
+  
+  return new Promise((resolve, reject) => {
+    let ws: any = null;
+    const pcmChunks: Buffer[] = [];
+    let transcription = '';
+    let isFinished = false;
+
+    const timeoutTimer = setTimeout(() => {
+      cleanup();
+      reject(new WorkerError(WORKER_ERROR_CODES.TIMEOUT, `Live API WebSocket timed out for model ${modelId}`, true));
+    }, 45000);
+
+    const cleanup = () => {
+      clearTimeout(timeoutTimer);
+      if (ws) {
+        try { ws.close(); } catch {}
+      }
+    };
+
+    try {
+      ws = new WebSocketCtor(wsUrl);
+    } catch (err: any) {
+      cleanup();
+      return reject(err);
+    }
+
+    ws.onopen = () => {
+      // Send setup frame
+      const setupMsg = {
+        setup: {
+          model: `models/${modelId}`,
+          generationConfig: {
+            responseModalities: ['AUDIO'],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: {
+                  voiceName: voiceName || 'Puck',
+                },
+              },
+            },
+          },
+          systemInstruction: {
+            parts: [{ text: systemPrompt }],
+          },
+        },
+      };
+      ws.send(JSON.stringify(setupMsg));
+    };
+
+    ws.onmessage = async (event: any) => {
+      try {
+        let raw: string;
+        if (typeof event.data === 'string') {
+          raw = event.data;
+        } else if (event.data instanceof Blob || typeof event.data?.text === 'function') {
+          raw = await event.data.text();
+        } else if (Buffer.isBuffer(event.data)) {
+          raw = event.data.toString('utf-8');
+        } else if (event.data instanceof ArrayBuffer) {
+          raw = Buffer.from(event.data).toString('utf-8');
+        } else {
+          raw = String(event.data);
+        }
+        const msg = JSON.parse(raw);
+
+        // When setup completes, send client content
+        if (msg.setupComplete) {
+          const clientMsg = {
+            clientContent: {
+              turns: [
+                {
+                  role: 'user',
+                  parts: [{ text: `Read aloud: ${text}` }],
+                },
+              ],
+              turnComplete: true,
+            },
+          };
+          ws.send(JSON.stringify(clientMsg));
+          return;
+        }
+
+        // Handle model response parts
+        const parts = msg.serverContent?.modelTurn?.parts || [];
+        for (const p of parts) {
+          if (p.inlineData?.data) {
+            pcmChunks.push(Buffer.from(p.inlineData.data, 'base64'));
+          }
+          if (p.text) {
+            transcription += p.text;
+          }
+        }
+
+        if (msg.serverContent?.turnComplete) {
+          isFinished = true;
+          cleanup();
+          const pcmBuffer = Buffer.concat(pcmChunks);
+          if (pcmBuffer.length === 0) {
+            reject(new WorkerError(WORKER_ERROR_CODES.AI_UNAVAILABLE, `Live API model ${modelId} returned 0 audio bytes`, true));
+          } else {
+            resolve({ pcmBuffer, transcription });
+          }
+        }
+      } catch (err) {
+        cleanup();
+        reject(err);
+      }
+    };
+
+    ws.onerror = (err: any) => {
+      cleanup();
+      reject(new WorkerError(WORKER_ERROR_CODES.AI_UNAVAILABLE, `Live API WebSocket error (${modelId}): ${err?.message || err}`, true));
+    };
+
+    ws.onclose = (event: any) => {
+      cleanup();
+      if (!isFinished) {
+        const classified = classifyGoogleError(new Error(`WebSocket closed with code ${event.code}: ${event.reason || 'abnormal closure'}`));
+        reject(new WorkerError(
+          classified.isMisconfigured ? WORKER_ERROR_CODES.BAD_CONFIG : WORKER_ERROR_CODES.AI_UNAVAILABLE,
+          `Live WebSocket closed prematurely: code ${event.code} (${event.reason || 'no reason'})`,
+          !classified.isMisconfigured
+        ));
+      }
+    };
+  });
+}
+
+/**
+ * Calls Gemini REST audio generation fallback
+ */
+async function callGeminiRestAudio(
+  modelId: string,
+  text: string,
+  voiceName: string,
+  systemPrompt: string
+): Promise<{ pcmBuffer: Buffer; transcription: string }> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${config.GEMINI_API_KEY}`;
-
   const payload = {
     contents: [
       {
@@ -110,17 +253,11 @@ export async function callGeminiLiveAudio(
 
   if (!res.ok) {
     const errText = await res.text();
-    if (res.status === 429) {
-      throw new WorkerError(
-        WORKER_ERROR_CODES.AI_UNAVAILABLE,
-        `Live Audio model ${modelId} rate limited: ${errText}`,
-        true
-      );
-    }
+    const classified = classifyGoogleError({ status: res.status, message: errText });
     throw new WorkerError(
-      WORKER_ERROR_CODES.AI_UNAVAILABLE,
+      classified.isMisconfigured ? WORKER_ERROR_CODES.BAD_CONFIG : WORKER_ERROR_CODES.AI_UNAVAILABLE,
       `Live Audio model ${modelId} HTTP ${res.status}: ${errText}`,
-      true
+      classified.canRetryLater
     );
   }
 
@@ -136,23 +273,47 @@ export async function callGeminiLiveAudio(
   }
 
   const pcmBuffer = Buffer.from(part.inlineData.data, 'base64');
-  const wavBuffer = pcmToWav(pcmBuffer, 24000, 1, 16);
-
-  // Compute duration (24000 samples/sec, 16-bit = 2 bytes/sample)
-  const durationSeconds = pcmBuffer.length / (24000 * 2);
-
-  // Extract transcription if model provided one
   const transcriptionPart = json?.candidates?.[0]?.content?.parts?.find((p: any) => p.text);
   const transcription = transcriptionPart?.text || '';
 
-  // Verbatim guard
+  return { pcmBuffer, transcription };
+}
+
+/**
+ * Main Live Audio Synthesis with WebSocket primary and REST secondary fallback
+ */
+export async function callGeminiLiveAudio(
+  modelId: string,
+  text: string,
+  voiceName: string,
+  strictRetry = false
+): Promise<LiveAudioResult> {
+  const systemPrompt = strictRetry
+    ? 'CRITICAL SYSTEM INSTRUCTION: You are a strict text-to-speech synthesizer. Output audio ONLY. Read the following text VERBATIM without adding, omitting, explaining, or repeating any words.'
+    : 'You are a text-to-speech reader. Read the provided text exactly, word for word, in a calm friendly teaching voice. Do not add, skip, summarize or comment. Output audio only.';
+
+  let audioOutput: { pcmBuffer: Buffer; transcription: string };
+
+  try {
+    audioOutput = await callGeminiLiveWebSocket(modelId, text, voiceName, systemPrompt);
+  } catch (wsErr: any) {
+    // If WebSocket failed due to network / unhandled method, try REST audio endpoint
+    logger.warn({ modelId, err: wsErr?.message }, 'WebSocket Live connection failed, trying REST audio fallback');
+    audioOutput = await callGeminiRestAudio(modelId, text, voiceName, systemPrompt);
+  }
+
+  const { pcmBuffer, transcription } = audioOutput;
+  const wavBuffer = pcmToWav(pcmBuffer, 24000, 1, 16);
+  const durationSeconds = pcmBuffer.length / (24000 * 2);
+
+  // Verbatim guard evaluation
   let wer = 0;
   if (transcription) {
     wer = calculateWordErrorRate(text, transcription);
     logger.info({ modelId, wer: wer.toFixed(3), durationSeconds }, 'Verbatim guard evaluated');
 
     if (wer > 0.08 && !strictRetry) {
-      logger.warn({ modelId, wer: wer.toFixed(3) }, 'Verbatim guard failed, retrying with strict instruction');
+      logger.warn({ modelId, wer: wer.toFixed(3) }, 'Verbatim guard failed (>8% WER), retrying with strict instruction');
       return callGeminiLiveAudio(modelId, text, voiceName, true);
     }
   }

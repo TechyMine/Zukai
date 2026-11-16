@@ -44,8 +44,21 @@ export function useJob(jobId: string) {
   useEffect(() => {
     if (!jobId) return;
 
+    let isMounted = true;
+
+    // Clean up any stale channels that might still be lingering for this jobId
+    const staleChannels = supabase.getChannels().filter((c) => c.topic.includes(jobId));
+    staleChannels.forEach((c) => {
+      try {
+        supabase.removeChannel(c);
+      } catch {}
+    });
+
+    // Use a unique channel name per subscription instance to prevent channel collision in React StrictMode/navigation
+    const channelName = `job_${jobId}_${Math.random().toString(36).substring(2, 9)}`;
+
     const channel = supabase
-      .channel(`job_${jobId}`)
+      .channel(channelName)
       .on(
         'postgres_changes',
         {
@@ -55,6 +68,7 @@ export function useJob(jobId: string) {
           filter: `id=eq.${jobId}`,
         },
         (payload) => {
+          if (!isMounted) return;
           const updatedJob = payload.new as AudioJobRow;
           queryClient.setQueryData(jobKeys.detail(jobId), updatedJob);
 
@@ -68,7 +82,10 @@ export function useJob(jobId: string) {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      isMounted = false;
+      try {
+        supabase.removeChannel(channel);
+      } catch {}
     };
   }, [jobId, queryClient]);
 

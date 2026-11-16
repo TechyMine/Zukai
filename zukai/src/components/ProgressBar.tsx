@@ -17,7 +17,7 @@ export function ProgressBar({
   style,
 }: ProgressBarProps) {
   const clamped = Math.max(0, Math.min(100, Math.round(progress)));
-  const showText = clamped >= 20;
+  const showText = height >= 14 && clamped >= 25;
 
   return (
     <View style={[styles.track, { height, borderRadius: height / 2 }, style]}>
@@ -96,7 +96,9 @@ const styles = StyleSheet.create({
   },
   textContainer: {
     position: 'absolute',
-    right: 6,
+    right: 8,
+    top: 0,
+    bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
   },

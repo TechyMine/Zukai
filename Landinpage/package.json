@@ -1,0 +1,12 @@
+{
+  "name": "zukai-landing-page",
+  "private": true,
+  "scripts": {
+    "dev": "npm run dev --prefix zukai-website",
+    "build": "npm run build --prefix zukai-website",
+    "preview": "npm run preview --prefix zukai-website",
+    "lint": "npm run lint --prefix zukai-website",
+    "format": "npm run format --prefix zukai-website",
+    "test": "npm run test --prefix zukai-website"
+  }
+}

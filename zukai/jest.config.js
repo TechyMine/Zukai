@@ -25,5 +25,6 @@ module.exports = {
     '^@react-native-async-storage/async-storage$': '<rootDir>/__mocks__/async-storage.js',
   },
   testMatch: ['**/__tests__/**/*.test.[jt]s?(x)', '**/?(*.)+(spec|test).[jt]s?(x)'],
+  testPathIgnorePatterns: ['/node_modules/', '/Landinpage/'],
 };
 

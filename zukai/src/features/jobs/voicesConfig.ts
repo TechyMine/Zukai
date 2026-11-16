@@ -1,7 +1,7 @@
 /**
  * ZUKAI VOICE CONFIGURATION
  * Location: /zukai/src/features/jobs/voicesConfig.ts
- * Description: Voice presets mapped to Gemini TTS personas
+ * Description: Real Google Gemini voice presets mapped directly to TTS & Live API
  */
 
 export interface VoiceOption {
@@ -9,49 +9,43 @@ export interface VoiceOption {
   name: string;
   role: string;
   tone: string;
-  gender: 'neutral' | 'masculine' | 'feminine';
-  geminiVoiceName: string; // Used by Phase 6 backend worker
+  geminiVoiceName: string;
   description: string;
 }
 
 export const VOICES: VoiceOption[] = [
   {
-    id: 'alloy',
-    name: 'Alloy',
+    id: 'puck',
+    name: 'Puck',
     role: 'Lead Mentor',
-    tone: 'Crisp & Engaging',
-    gender: 'neutral',
+    tone: 'Engaging & Dynamic',
     geminiVoiceName: 'Puck',
-    description: 'Energetic, modern, and exceptionally clear for complex technical topics.',
+    description: 'Energetic, modern, and exceptionally clear for all topics.',
   },
   {
-    id: 'echo',
-    name: 'Echo',
+    id: 'charon',
+    name: 'Charon',
     role: 'Executive Analyst',
-    tone: 'Warm & Authoritative',
-    gender: 'masculine',
+    tone: 'Deep & Authoritative',
     geminiVoiceName: 'Charon',
-    description: 'Deep, deliberate cadence ideal for business briefs and whitepapers.',
+    description: 'Deep, deliberate cadence ideal for whitepapers & deep briefs.',
   },
   {
-    id: 'fable',
-    name: 'Fable',
+    id: 'kore',
+    name: 'Kore',
     role: 'Academic Tutor',
-    tone: 'Expressive & Narrative',
-    gender: 'feminine',
+    tone: 'Calm & Thoughtful',
     geminiVoiceName: 'Kore',
-    description: 'Approachable, warm pacing that makes dense textbooks easy to follow.',
+    description: 'Approachable, warm pacing that makes complex guides easy to follow.',
   },
   {
-    id: 'onyx',
-    name: 'Onyx',
-    role: 'Deep Thinker',
-    tone: 'Calm & Measured',
-    gender: 'masculine',
+    id: 'fenrir',
+    name: 'Fenrir',
+    role: 'Energetic Coach',
+    tone: 'Warm & Crisp',
     geminiVoiceName: 'Fenrir',
-    description: 'Subtle and focused tone tailored for late-night study and philosophical texts.',
+    description: 'Focused, clear, and inspiring delivery for fast learning.',
   },
 ];
 
-export const DEFAULT_VOICE_ID = 'alloy';
-
+export const DEFAULT_VOICE_ID = 'puck';

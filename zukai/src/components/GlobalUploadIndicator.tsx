@@ -63,7 +63,7 @@ export function GlobalUploadIndicator() {
   }
 
   return (
-    <View style={[styles.floatingContainer, { bottom: insets.bottom + 68 }]}>
+    <View style={[styles.floatingContainer, { top: insets.top + 8 }]}>
       <GlassCard style={styles.card}>
         <View style={styles.topRow}>
           <View style={styles.iconContainer}>

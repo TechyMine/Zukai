@@ -41,6 +41,8 @@ import { ShinyButton } from '@/components/ShinyButton';
 import { Mascot } from '@/components/Mascot';
 import { LanguageToggle, Language } from '@/components/LanguageToggle';
 import { ProgressBar } from '@/components/ProgressBar';
+import { QuotaWarningSheet } from '@/components/QuotaWarningSheet';
+import { formatMinutes } from '@/lib/formatMinutes';
 import { useUploadStore } from '@/features/upload/uploadManager';
 import {
   validatePickedFile,
@@ -100,6 +102,7 @@ export default function UploadScreen() {
   const [isSubmittingJob, setIsSubmittingJob] = useState(false);
   const [validationAlert, setValidationAlert] = useState<ValidationResult | null>(null);
   const [duplicateWarning, setDuplicateWarning] = useState<FileMetadata | null>(null);
+  const [showQuotaSheet, setShowQuotaSheet] = useState(false);
 
   // Restore previous options
   useEffect(() => {
@@ -121,6 +124,40 @@ export default function UploadScreen() {
     const estWords = estimateSourceWords(rawBytes, activeFile?.mimeType ?? 'application/pdf');
     return calculateDepthEstimates(estWords);
   }, [activeFile]);
+
+  const chosenEstimate = depthEstimates[selectedDepth];
+
+  // Compute remaining minutes & possible shorter alternatives
+  const minutesLeft =
+    (usageSummary?.monthly_audio_minutes_limit ?? 45) -
+    (usageSummary?.monthly_audio_minutes_used ?? 0);
+
+  const alternativeDepth = useMemo(() => {
+    if (selectedDepth === 'deep') {
+      if (depthEstimates.standard.estimatedMinutes <= minutesLeft) {
+        return {
+          mode: 'standard' as DepthMode,
+          label: 'Standard Summary',
+          estimatedMinutes: depthEstimates.standard.estimatedMinutes,
+        };
+      } else if (depthEstimates.quick.estimatedMinutes <= minutesLeft) {
+        return {
+          mode: 'quick' as DepthMode,
+          label: 'Quick Breakdown',
+          estimatedMinutes: depthEstimates.quick.estimatedMinutes,
+        };
+      }
+    } else if (selectedDepth === 'standard') {
+      if (depthEstimates.quick.estimatedMinutes <= minutesLeft) {
+        return {
+          mode: 'quick' as DepthMode,
+          label: 'Quick Breakdown',
+          estimatedMinutes: depthEstimates.quick.estimatedMinutes,
+        };
+      }
+    }
+    return null;
+  }, [selectedDepth, depthEstimates, minutesLeft]);
 
   // Pick Document Handler
   const handlePickDocument = async () => {
@@ -193,19 +230,8 @@ export default function UploadScreen() {
     }
 
     const chosenEstimate = depthEstimates[selectedDepth];
-    const minutesLeft =
-      (usageSummary?.monthly_audio_minutes_limit ?? 45) -
-      (usageSummary?.monthly_audio_minutes_used ?? 0);
-
     if (minutesLeft < chosenEstimate.estimatedMinutes) {
-      Alert.alert(
-        'Quota Warning',
-        `This explanation needs ~${chosenEstimate.estimatedMinutes} minutes, but you have ${Math.max(0, minutesLeft)} minutes remaining this month. Upgrade to Pro for unlimited audio?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Upgrade', onPress: () => router.push('/paywall' as any) },
-        ]
-      );
+      setShowQuotaSheet(true);
       return;
     }
 
@@ -335,12 +361,10 @@ export default function UploadScreen() {
         <View style={styles.quotaRow}>
           <Text variant="footnote" rawColor={C.textTertiary}>
             Audio remaining:{' '}
-            {Math.max(
-              0,
-              (usageSummary?.monthly_audio_minutes_limit ?? 45) -
-                (usageSummary?.monthly_audio_minutes_used ?? 0)
-            )}{' '}
-            mins •{' '}
+            <Text variant="footnote" rawColor={C.brandHero} style={{ fontWeight: '700' }}>
+              {formatMinutes(Math.max(0, minutesLeft))}
+            </Text>
+            {' '}this month •{' '}
           </Text>
           <Pressable onPress={() => router.push('/paywall' as any)}>
             <Text variant="footnote" rawColor={C.brandHero} style={{ fontWeight: '700' }}>
@@ -348,6 +372,23 @@ export default function UploadScreen() {
             </Text>
           </Pressable>
         </View>
+
+        <QuotaWarningSheet
+          visible={showQuotaSheet}
+          minutesRemaining={minutesLeft}
+          neededMinutes={chosenEstimate.estimatedMinutes}
+          currentDepth={selectedDepth}
+          alternativeDepth={alternativeDepth}
+          onSelectAlternative={(mode) => {
+            setSelectedDepth(mode);
+            setShowQuotaSheet(false);
+          }}
+          onUpgrade={() => {
+            setShowQuotaSheet(false);
+            router.push('/paywall' as any);
+          }}
+          onDismiss={() => setShowQuotaSheet(false)}
+        />
       </ScreenContainer>
     );
   }
@@ -521,6 +562,23 @@ export default function UploadScreen() {
             onPress={handleCreateAudio}
           />
         </View>
+
+        <QuotaWarningSheet
+          visible={showQuotaSheet}
+          minutesRemaining={minutesLeft}
+          neededMinutes={chosenEstimate.estimatedMinutes}
+          currentDepth={selectedDepth}
+          alternativeDepth={alternativeDepth}
+          onSelectAlternative={(mode) => {
+            setSelectedDepth(mode);
+            setShowQuotaSheet(false);
+          }}
+          onUpgrade={() => {
+            setShowQuotaSheet(false);
+            router.push('/paywall' as any);
+          }}
+          onDismiss={() => setShowQuotaSheet(false)}
+        />
       </ScreenContainer>
     </View>
   );

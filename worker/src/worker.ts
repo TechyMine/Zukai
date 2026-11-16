@@ -212,13 +212,28 @@ export async function processJob(job: ClaimedJob): Promise<void> {
       .from('audio_jobs')
       .update({
         models_used: allModelsUsed,
+        providers_used: audioResult.providersUsed || [],
         tokens_used: {
           inputTokens: script.inputTokens,
           outputTokens: script.outputTokens,
           totalWords: script.totalWords,
         },
+        step_detail: {
+          unit: 'publish',
+          done: audioResult.chapters.length,
+          total: audioResult.chapters.length,
+        },
       })
       .eq('id', job.job_id);
+
+    // Guard: only complete and record usage if real speech was verified
+    if (audioResult.isVerifiedRealSpeech === false) {
+      throw new WorkerError(
+        WORKER_ERROR_CODES.AI_UNAVAILABLE,
+        'Cannot complete job: One or more audio chunks were generated using synthetic test tones instead of real speech.',
+        false
+      );
+    }
 
     // Stage 5: Ready (progress 100)
     await completeJob({
@@ -240,17 +255,25 @@ export async function processJob(job: ClaimedJob): Promise<void> {
     logger.info({ jobId: job.job_id, durationSeconds: audioResult.durationSeconds }, 'Job completed successfully');
   } catch (err: unknown) {
     if (err instanceof CapacityExhaustedError) {
+      // User requirement: auto-resume after 60s (1 min), never freeze for hours
+      const actualWaitSeconds = Math.min(Math.max(err.earliestWaitSeconds, 15), 60);
+
       logger.warn(
-        { jobId: job.job_id, waitSeconds: err.earliestResetSeconds },
-        'All AI models constrained. Transitioning job to waiting_for_capacity'
+        { jobId: job.job_id, waitSeconds: actualWaitSeconds, originalWaitSeconds: err.earliestWaitSeconds, reason: err.waitingReason },
+        `All AI models constrained. Transitioning job to waiting_for_capacity (Auto-resuming in ${actualWaitSeconds}s)`
       );
+
+      const resumeAt = new Date(Date.now() + actualWaitSeconds * 1000).toISOString();
 
       await supabaseAdmin
         .from('audio_jobs')
         .update({
           status: 'waiting_for_capacity',
-          current_step: 'High demand right now. Audio synthesis will resume automatically.',
-          waiting_until: new Date(Date.now() + err.earliestResetSeconds * 1000).toISOString(),
+          current_step: 'Our AI voice is catching its breath. Resuming automatically.',
+          resume_at: resumeAt,
+          waiting_until: resumeAt,
+          waiting_reason: err.waitingReason || 'rpm',
+          capacity_waits: ((job as any).capacity_waits || 0) + 1,
         })
         .eq('id', job.job_id);
 
@@ -308,8 +331,10 @@ export async function reapStuckJobs(): Promise<void> {
           .from('audio_jobs')
           .update({
             status: 'queued',
-            current_step: 'Resuming from saved step...',
+            current_step: 'Resuming audio synthesis from saved step...',
             waiting_until: null,
+            resume_at: null,
+            waiting_reason: null,
           })
           .eq('id', wJob.id);
       }
@@ -355,8 +380,8 @@ export async function startWorker(): Promise<void> {
 
   logger.info({ concurrency: config.WORKER_CONCURRENCY }, 'Worker polling loop started');
 
-  // Start autonomous stuck job reaper every 30 seconds
-  const reaperTimer = setInterval(reapStuckJobs, 30000);
+  // Start autonomous stuck job reaper every 10 seconds (prompt resumption within 1 min)
+  const reaperTimer = setInterval(reapStuckJobs, 10000);
 
   while (!shouldStop) {
     if (activeJobCount >= config.WORKER_CONCURRENCY) {

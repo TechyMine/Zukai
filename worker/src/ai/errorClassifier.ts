@@ -6,7 +6,7 @@
 
 export type QuotaKind = 'rpm' | 'tpm' | 'rpd' | 'unknown_quota';
 
-export type ErrorClassificationType = 
+export type ErrorClassificationType =
   | 'quota'
   | 'transient'
   | 'misconfigured'
@@ -25,10 +25,49 @@ export interface ClassifiedError {
   canRetryLater: boolean;
 }
 
+/** Structured detail shapes from Google RPC error responses */
+interface RetryInfoDetail {
+  '@type'?: string;
+  type?: string;
+  retryDelay?: string | number;
+}
+
+interface QuotaViolation {
+  quotaId?: string;
+  description?: string;
+  quotaMetric?: string;
+  quotaValue?: string | number;
+}
+
+interface QuotaFailureDetail {
+  '@type'?: string;
+  type?: string;
+  violations?: QuotaViolation[];
+}
+
+type GoogleRpcDetail = RetryInfoDetail | QuotaFailureDetail | Record<string, unknown>;
+
+/** Structured subset of a Google API error we might receive */
+interface GoogleApiErrorShape {
+  status?: number;
+  statusCode?: number;
+  message?: string;
+  errorDetails?: GoogleRpcDetail[];
+  details?: GoogleRpcDetail[];
+  response?: {
+    status?: number;
+    data?: {
+      error?: {
+        details?: GoogleRpcDetail[];
+      };
+    };
+  };
+}
+
 /**
  * Parse duration strings like "55164s", "55164.21s", or numbers
  */
-function parseDurationToSeconds(val: any): number | undefined {
+function parseDurationToSeconds(val: string | number | undefined | null): number | undefined {
   if (typeof val === 'number') return Math.max(0, Math.round(val));
   if (typeof val === 'string') {
     const match = val.match(/^([0-9]+(?:\.[0-9]+)?)s?$/i);
@@ -71,15 +110,32 @@ function parseMessageRetryHint(message: string): number | undefined {
   return undefined;
 }
 
+/** Type guard for RetryInfo detail */
+function isRetryInfoDetail(d: GoogleRpcDetail): d is RetryInfoDetail {
+  const type = (d as RetryInfoDetail)['@type'] ?? (d as RetryInfoDetail).type ?? '';
+  return typeof type === 'string' && type.includes('RetryInfo');
+}
+
+/** Type guard for QuotaFailure detail */
+function isQuotaFailureDetail(d: GoogleRpcDetail): d is QuotaFailureDetail {
+  const type = (d as QuotaFailureDetail)['@type'] ?? (d as QuotaFailureDetail).type ?? '';
+  return typeof type === 'string' && type.includes('QuotaFailure');
+}
+
 /**
  * Classify a Google RPC / REST / Network error into a structured ClassifiedError
  */
-export function classifyGoogleError(err: any): ClassifiedError {
-  const message = (err?.message || String(err) || '').trim();
-  const status = err?.status || err?.statusCode || err?.response?.status;
-  
+export function classifyGoogleError(err: unknown): ClassifiedError {
+  const e = err as GoogleApiErrorShape;
+  const message = (e?.message || String(err) || '').trim();
+  const status = e?.status ?? e?.statusCode ?? e?.response?.status;
+
   // Check for HTTP 404 (Model not found / Invalid path)
-  if (status === 404 || message.includes('404') || message.includes('models/') && message.includes('not found')) {
+  if (
+    status === 404 ||
+    message.includes('404') ||
+    (message.includes('models/') && message.includes('not found'))
+  ) {
     return {
       type: 'misconfigured',
       reason: `Model not found or unsupported endpoint (404): ${message}`,
@@ -90,13 +146,13 @@ export function classifyGoogleError(err: any): ClassifiedError {
 
   // Check for HTTP 400 Bad Request with unsupported WebSocket / method
   if (
-    status === 400 && (
-      message.includes('bidiGenerateContent') ||
+    status === 400 &&
+    (message.includes('bidiGenerateContent') ||
       message.includes('WebSocket') ||
       message.includes('not supported') ||
+      message.includes('bad method') ||
       message.includes('Unsupported method') ||
-      message.includes('API version')
-    )
+      message.includes('API version'))
   ) {
     return {
       type: 'misconfigured',
@@ -122,7 +178,7 @@ export function classifyGoogleError(err: any): ClassifiedError {
   }
 
   // Check for Transient 5xx / Network / Timeout errors
-  const isNetwork = 
+  const isNetwork =
     status === 500 ||
     status === 502 ||
     status === 503 ||
@@ -158,22 +214,27 @@ export function classifyGoogleError(err: any): ClassifiedError {
     let quotaValue: number | undefined;
 
     // 1. Inspect error.errorDetails or error.details (standard Google RPC array)
-    const details = err?.errorDetails || err?.details || err?.response?.data?.error?.details || [];
+    const details: GoogleRpcDetail[] =
+      e?.errorDetails ??
+      e?.details ??
+      e?.response?.data?.error?.details ??
+      [];
+
     if (Array.isArray(details)) {
       for (const d of details) {
         // RetryInfo
-        if (d?.['@type']?.includes('RetryInfo') || d?.type?.includes('RetryInfo')) {
+        if (isRetryInfoDetail(d)) {
           const delay = parseDurationToSeconds(d.retryDelay);
           if (delay !== undefined) {
             retryDelaySeconds = delay;
           }
         }
         // QuotaFailure
-        if (d?.['@type']?.includes('QuotaFailure') || d?.type?.includes('QuotaFailure')) {
-          const violations = d.violations || [];
+        if (isQuotaFailureDetail(d)) {
+          const violations = d.violations ?? [];
           if (violations.length > 0) {
             const v = violations[0];
-            quotaId = v.quotaId || v.description;
+            quotaId = v.quotaId ?? v.description;
             quotaMetric = v.quotaMetric;
             if (v.quotaValue !== undefined) {
               const numVal = parseInt(String(v.quotaValue), 10);
@@ -190,21 +251,36 @@ export function classifyGoogleError(err: any): ClassifiedError {
     }
 
     // Determine Quota Kind
+    // Prefer quotaId/quotaMetric from structured data; fall back to message text
     let quotaKind: QuotaKind = 'unknown_quota';
-    const checkTarget = `${quotaId || ''} ${message}`.toLowerCase();
+    const idTarget = `${quotaId ?? ''} ${quotaMetric ?? ''}`.toLowerCase();
+    const msgTarget = message.toLowerCase();
 
-    if (checkTarget.includes('perday') || checkTarget.includes('daily') || checkTarget.includes('requestsperday')) {
+    if (
+      idTarget.includes('perday') ||
+      idTarget.includes('per_day') ||
+      idTarget.includes('requestsperday') ||
+      msgTarget.includes('perday') ||
+      msgTarget.includes('daily') ||
+      msgTarget.includes('requestsperday')
+    ) {
       quotaKind = 'rpd';
     } else if (
-      checkTarget.includes('token') ||
-      checkTarget.includes('inputtoken') ||
-      checkTarget.includes('tokensperminute')
+      idTarget.includes('inputtoken') ||
+      idTarget.includes('token') ||
+      idTarget.includes('tokensperminute') ||
+      msgTarget.includes('inputtoken') ||
+      msgTarget.includes('tokensperminute')
     ) {
       quotaKind = 'tpm';
     } else if (
-      checkTarget.includes('perminute') ||
-      checkTarget.includes('requestsperminute') ||
-      checkTarget.includes('rpm')
+      idTarget.includes('perminute') ||
+      idTarget.includes('per_minute') ||
+      idTarget.includes('requestsperminute') ||
+      idTarget.includes('rpm') ||
+      msgTarget.includes('perminute') ||
+      msgTarget.includes('requestsperminute') ||
+      msgTarget.includes('rpm')
     ) {
       quotaKind = 'rpm';
     } else if (retryDelaySeconds && retryDelaySeconds > 3600) {
@@ -213,16 +289,16 @@ export function classifyGoogleError(err: any): ClassifiedError {
     }
 
     // Compute appropriate cooldown:
-    // If server gave retryDelay, add small jitter (2-5s)
-    let finalCooldown = 60;
+    // If server gave retryDelay, add jitter (5-30s)
+    let finalCooldown: number;
     if (retryDelaySeconds !== undefined && retryDelaySeconds > 0) {
-      finalCooldown = retryDelaySeconds + Math.round(Math.random() * 5);
+      finalCooldown = retryDelaySeconds + 5 + Math.round(Math.random() * 25);
     } else if (quotaKind === 'rpd') {
       // If daily with no explicit hint, calculate seconds until Pacific midnight
       finalCooldown = getSecondsUntilPacificMidnight();
     } else {
-      // Minute window with no hint defaults to 60s + jitter
-      finalCooldown = 60 + Math.round(Math.random() * 5);
+      // Minute window with no hint defaults to 60s + jitter (5-30s)
+      finalCooldown = 60 + 5 + Math.round(Math.random() * 25);
     }
 
     return {
@@ -258,7 +334,7 @@ export function getSecondsUntilPacificMidnight(): number {
     now.getUTCDate(),
     8, 0, 0, 0
   ));
-  
+
   if (now.getTime() >= resetUtc.getTime()) {
     resetUtc.setUTCDate(resetUtc.getUTCDate() + 1);
   }

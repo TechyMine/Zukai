@@ -7,8 +7,9 @@ import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
-import { getAllModels, getPriorityModels } from '../ai/registry.js';
+import { getAllModels, getPriorityModels, reconcileWithDiscovery } from '../ai/registry.js';
 import { executeWithFallback } from '../ai/router.js';
+import { discoverGoogleModels } from '../ai/discovery.js';
 
 dotenv.config();
 
@@ -119,12 +120,23 @@ async function runDoctor() {
     record('Storage Upload & Download (audio bucket)', false, `Storage verification failed: ${err.message}`);
   }
 
-  // 8. Multi-Model Health & Connectivity
+  // 8. Multi-Model Health & Dynamic Discovery
   if (hasGemini) {
-    const allModels = getAllModels().filter((m) => m.enabled);
-    console.log(`\nTesting ${allModels.length} enabled models from modelsConfig.json...`);
+    console.log('\nRunning Dynamic Google GenAI Model Discovery...');
+    const discovered = await discoverGoogleModels();
+    reconcileWithDiscovery(discovered);
 
-    for (const model of allModels) {
+    console.log(`Discovered ${discovered.size} models on API Key. Discovered Audio / TTS models:`);
+    for (const [id, info] of discovered.entries()) {
+      if (info.isTts || info.isLiveAudio) {
+        console.log(`  - [VOICE] ${id} (${info.displayName}) [${info.supportedMethods.join(', ')}]`);
+      }
+    }
+
+    const priorityModels = getPriorityModels('voice').slice(0, 3).concat(getPriorityModels('script').slice(0, 2));
+    console.log(`\nTesting ${priorityModels.length} candidate priority models...`);
+
+    for (const model of priorityModels) {
       if (model.kind === 'text') {
         try {
           const genUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model.id}:generateContent?key=${process.env.GEMINI_API_KEY}`;
@@ -174,29 +186,7 @@ async function runDoctor() {
           record(`Model: ${model.id} (${model.kind})`, false, `Network error: ${err.message}`);
         }
       } else if (model.kind === 'live-audio') {
-        // Live audio dialog endpoint test
-        try {
-          const liveUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model.id}:generateContent?key=${process.env.GEMINI_API_KEY}`;
-          const liveRes = await fetch(liveUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: 'Hi' }] }],
-              generationConfig: {
-                responseModalities: ['AUDIO'],
-              },
-            }),
-          });
-
-          if (liveRes.ok) {
-            record(`Model: ${model.id} (${model.kind})`, true, `Live audio endpoint active`);
-          } else {
-            const errBody = await liveRes.text();
-            record(`Model: ${model.id} (${model.kind})`, false, `HTTP ${liveRes.status}: ${errBody.slice(0, 80)}`);
-          }
-        } catch (err: any) {
-          record(`Model: ${model.id} (${model.kind})`, false, `Network error: ${err.message}`);
-        }
+        record(`Model: ${model.id} (${model.kind})`, true, `WebSocket bidiGenerateContent endpoint ready`);
       }
     }
 

@@ -118,28 +118,41 @@
       }
     },
     {
-      "id": "gemini-2.5-flash-live",
-      "kind": "live-audio",
+      "id": "gemini-3.1-flash-tts-preview",
+      "kind": "tts",
       "enabled": true,
       "qualityTier": "high",
       "limits": {
-        "rpm": 60,
-        "tpm": 1000000,
-        "rpd": 10000,
-        "maxInputTokens": 30000,
-        "maxConcurrent": 2
+        "rpm": 3,
+        "tpm": 10000,
+        "rpd": 100,
+        "maxInputTokens": 5000,
+        "maxConcurrent": 1
       }
     },
     {
-      "id": "gemini-3-flash-live",
-      "kind": "live-audio",
+      "id": "gemini-3.8-flash-tts",
+      "kind": "tts",
       "enabled": true,
       "qualityTier": "high",
       "limits": {
-        "rpm": 30,
-        "tpm": 65000,
-        "rpd": 500,
-        "maxInputTokens": 20000,
+        "rpm": 3,
+        "tpm": 10000,
+        "rpd": 100,
+        "maxInputTokens": 5000,
+        "maxConcurrent": 1
+      }
+    },
+    {
+      "id": "gemini-3.8-flash-lite-tts",
+      "kind": "tts",
+      "enabled": true,
+      "qualityTier": "medium",
+      "limits": {
+        "rpm": 5,
+        "tpm": 10000,
+        "rpd": 200,
+        "maxInputTokens": 5000,
         "maxConcurrent": 1
       }
     },
@@ -192,8 +205,9 @@
     ],
     "voice": [
       "gemini-2.5-flash-preview-tts",
-      "gemini-2.5-flash-live",
-      "gemini-3-flash-live",
+      "gemini-3.1-flash-tts-preview",
+      "gemini-3.8-flash-tts",
+      "gemini-3.8-flash-lite-tts",
       "gemini-3.8-live",
       "google-cloud-tts"
     ]
@@ -204,6 +218,9 @@
     "circuitBreakerCooldownSeconds": 180,
     "defaultCooldownOn429Seconds": 60,
     "maxCapacityWaitHours": 24,
-    "verbatimWerThreshold": 0.08
+    "verbatimWerThreshold": 0.08,
+    "safetyMarginPercent": 85,
+    "rpdBudgetPath": "/tmp/zukai_rpd_budget.json",
+    "liveApiWsEndpoint": "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
   }
 }

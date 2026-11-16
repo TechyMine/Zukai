@@ -18,6 +18,7 @@ import {
   ChevronRight,
   BookOpen,
   FileSpreadsheet,
+  Pause,
 } from 'lucide-react-native';
 import { GlassCard } from './GlassCard';
 import { Text } from './Text';
@@ -137,8 +138,8 @@ export function DocumentRow({
     statusLabel = 'FAILED';
     statusColor = C.error;
   } else if (status === 'waiting_for_capacity') {
-    statusLabel = 'WAITING';
-    statusColor = C.orange;
+    statusLabel = 'PAUSED';
+    statusColor = '#FFB300';
   } else if (status === 'extracting' || status === 'scripting' || status === 'voicing' || status === 'assembling' || status === 'uploading' || status === 'uploaded') {
     statusLabel = 'PROCESSING';
     statusColor = C.brandHero;
@@ -198,6 +199,9 @@ export function DocumentRow({
           <View style={styles.chipsRow}>
             {/* Status Chip */}
             <View style={[styles.chip, { backgroundColor: `${statusColor}18`, borderColor: `${statusColor}40` }]}>
+              {status === 'waiting_for_capacity' && (
+                <Pause size={10} color={statusColor} style={{ marginRight: 3 }} />
+              )}
               <Text variant="caption" rawColor={statusColor} style={styles.chipText}>
                 {statusLabel}
               </Text>

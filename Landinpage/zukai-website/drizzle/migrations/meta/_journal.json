@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1794794786485,
+      "tag": "0000_create_waitlist",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794795272786,
+      "tag": "0001_tighten_waitlist_insert_policy",
+      "breakpoints": true
+    }
+  ]
+}

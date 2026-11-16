@@ -419,3 +419,43 @@
 - **Decision:** Migrated global playback engine to **`expo-audio`** (`~58.0.12`), Expo's official modern audio package. Configured `setAudioModeAsync` for background playback, implemented `createAudioPlayer` with 200ms `updateInterval` for sentence-level karaoke transcript syncing, and hooked reactive status listeners.
 - **Binary Blob Performance (`expo-blob`):** Installed **`expo-blob`** (`^58.0.3`) providing standards-compliant, native-backed `Blob` handling to eliminate base64 bridge serialization overhead during Supabase Storage downloads and large audio streaming operations.
 
+---
+
+## Phase 7D Decisions (AI Router Resilience, Resumable Units, Quota UI & Edtech Mascot)
+
+### 40. Zero Fake Audio Policy & Sine Synth Removal from Production
+- **Root Cause:** When TTS and fallback models failed, `ttsEngine` fell back to a local sine wave generator, producing 440 Hz beep tracks that completed with status `ready`.
+- **Decision:** Removed synthetic tones from the production path entirely. The local synthesizer is strictly barred unless `NODE_ENV !== 'production' && ALLOW_TEST_SINE_SYNTH === 'true'`. Every generated audio chunk records `isRealSpeech: true` and provider metadata (`providers_used`). Built `npm run audit:fake-audio` to detect legacy tone tracks without deleting, and support `--fix` to credit back deducted minutes and hide invalid tracks.
+
+### 41. Google RPC Structured Error Parsing & Adaptive Cooldown
+- **Root Cause:** When TTS failed with daily limits (e.g. `retryDelay 55164s`), the worker applied a generic 60-second cooldown, creating immediate retry loops.
+- **Decision:** Built `errorClassifier.ts` to parse `google.rpc.RetryInfo.retryDelay`, `QuotaFailure.violations[].quotaId/quotaMetric/quotaValue`, and message regex (`retry in 15h19m`). Minute violations (RPM/TPM) trigger server retryDelay + jitter; daily violations (RPD) cooldown until Pacific midnight (08:00 UTC). Auto-updates stored model limits from `quotaValue`.
+
+### 42. Official Live API over WebSocket (`bidiGenerateContent`)
+- **Root Cause:** Live dialog models were invoked over REST `generateContent`, returning 404 or 400 bad method errors.
+- **Decision:** Implemented Live API narration over WebSocket (`bidiGenerateContent`) conforming to Google GenAI specifications, with dynamic model discovery (`GET /v1beta/models`) filtering out non-speech variants (translate, transcribe, extended thinking) and printing discovered models in `doctor` and `quota:status`.
+
+### 43. Explicit Misconfiguration vs. Quota Classification
+- **Root Cause:** 404 Not Found and 400 Bad Method errors were treated as quota limits and retried repeatedly for every chapter.
+- **Decision:** Categorized errors into `quota`, `transient`, `misconfigured`, and `content_blocked`. Models returning 404 or unsupported method are immediately disabled for the session in the registry and logged once.
+
+### 44. Typed Router Decision & Fast Failures
+- **Decision:** `decideModel()` returns a typed union: `ok(model)` | `wait(until, reason, earliestWaitSeconds)` | `unavailable(reasons)`. If any model has a minute cooldown, it returns `wait`. If all models are daily-exhausted, it returns `wait` until Pacific reset. If all models are misconfigured, it fails fast with a `CONFIG` error rather than generating fake audio.
+
+### 45. Durable State Machine Units & Idempotent Resumability
+- **Decision:** Decomposed processing into small idempotent units: `extract`, `outline`, `script_chapter_i`, `voice_chunk_j`, `assemble`, `publish`. Intermediate artifacts are saved to `job_artifacts` in storage. When capacity is exhausted, the job saves `resume_at`, `waiting_reason`, and `step_detail`, freeing the worker slot for waits >90s. Stuck-job reaper recognizes future `resume_at` as healthy.
+
+### 46. QuotaWarningSheet Bottom Sheet & `formatMinutes()` Helper
+- **Root Cause:** Quota warnings were shown as raw white native alerts displaying floating-point minutes like "2.7000000000000003 minutes".
+- **Decision:** Created `QuotaWarningSheet.tsx`, a themed bottom sheet featuring Zuke with an hourglass, honest text ("You have 2 min 42 s left this month. This Quick Breakdown needs about 5 min"), and alternative depth switching. Standardized all time formatting across the app via unit-tested `formatMinutes()` helper.
+
+### 47. Gemini Real Voice Identifiers
+- **Decision:** Replaced legacy OpenAI voice names (Alloy, Echo, etc.) with real Google Gemini TTS voice identifiers: `Puck` (Warm, upbeat), `Charon` (Deep, authoritative), `Kore` (Clear, calm), and `Fenrir` (Energetic storytelling), ensuring voice settings faithfully apply across both Neural TTS and Live fallback.
+
+### 48. Edtech Theme Tokens & 20-Pose Mascot Suite
+- **Decision:** Shifted aesthetic from dark cybersecurity tool to a friendly edtech product. Added warm amber and sky blue secondary accents, softer border opacities, and larger corner radii. Generated a complete 20-pose 3D Zuke mascot suite (wave, reading, headphones, hourglass, coffee, etc.) and glossy 3D card background art, verified via high-resolution contact sheets.
+
+### 49. Layered `<ArtCard>` Architecture with 360dp Safety
+- **Decision:** Built reusable `<ArtCard>` component providing backdrop art (30-60% opacity), legibility gradient, mascot positioning, and text containment constrained to 60% width to prevent text collision on small 360dp screens while maintaining strict WCAG AA contrast.
+
+

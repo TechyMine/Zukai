@@ -168,7 +168,7 @@ export default function ProcessingScreen() {
   const mascotPose = useMemo(() => {
     if (status === 'ready') return 'success';
     if (status === 'failed') return 'error';
-    if (status === 'waiting_for_capacity') return 'thinking';
+    if (status === 'waiting_for_capacity') return 'coffee_break';
     if (status === 'voicing' || status === 'assembling') return 'listening';
     return 'thinking';
   }, [status]);
@@ -237,15 +237,57 @@ export default function ProcessingScreen() {
     }
   };
 
+  // Live countdown until automatic resume
+  const resumeCountdown = useMemo(() => {
+    if (status !== 'waiting_for_capacity') return null;
+    const target = (effectiveJob as any).resume_at || (effectiveJob as any).waiting_until;
+    if (!target) return 'Resuming shortly';
+
+    const targetMs = new Date(target).getTime();
+    const diffSec = Math.max(0, Math.ceil((targetMs - Date.now()) / 1000));
+    if (diffSec <= 0) return 'Resuming now...';
+
+    if (diffSec < 3600) {
+      const mins = Math.floor(diffSec / 60);
+      const secs = diffSec % 60;
+      return `Resuming in ${mins}:${secs < 10 ? '0' : ''}${secs}`;
+    }
+
+    const targetDate = new Date(target);
+    const hours = targetDate.getHours();
+    const minutes = targetDate.getMinutes();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    const formattedHour = hours % 12 || 12;
+    const formattedMin = minutes < 10 ? `0${minutes}` : minutes;
+    return `Resumes around ${formattedHour}:${formattedMin} ${ampm}`;
+  }, [status, (effectiveJob as any).resume_at, (effectiveJob as any).waiting_until, elapsedSeconds]);
+
+  // Precise unit progress if recorded
+  const unitProgressText = useMemo(() => {
+    const detail = (effectiveJob as any).step_detail;
+    if (detail && detail.done !== undefined && detail.total) {
+      const unitName =
+        detail.unit === 'voice'
+          ? 'Recording audio'
+          : detail.unit === 'script'
+          ? 'Drafting script'
+          : 'Processing';
+      return `${unitName}, ${detail.done} of ${detail.total}`;
+    }
+    return null;
+  }, [(effectiveJob as any).step_detail]);
+
   // Estimate remaining time
   const remainingEstimate = useMemo(() => {
     if (status === 'ready') return 'Ready now';
-    if (status === 'waiting_for_capacity') return 'High demand • Resuming automatically';
+    if (status === 'waiting_for_capacity') {
+      return resumeCountdown || 'Resuming automatically';
+    }
     if (progress < 25) return 'About 1–2 min remaining';
     if (progress < 60) return 'About 1 min remaining';
     if (progress < 90) return 'Under 30 seconds remaining';
     return 'Finalizing audio...';
-  }, [progress, status]);
+  }, [progress, status, resumeCountdown]);
 
   return (
     <View style={styles.root}>
@@ -265,7 +307,7 @@ export default function ProcessingScreen() {
               : status === 'failed'
               ? 'Processing Failed'
               : status === 'waiting_for_capacity'
-              ? 'High Demand'
+              ? 'Taking a Short Break'
               : 'Generating Audio'}
           </Text>
           {!isTerminal ? (
@@ -299,7 +341,7 @@ export default function ProcessingScreen() {
                 {status === 'queued'
                   ? 'Queued in Processing Pipeline'
                   : status === 'waiting_for_capacity'
-                  ? 'High Demand Right Now'
+                  ? (unitProgressText ? `${unitProgressText} (Paused)` : 'Our AI Voice is Catching Its Breath')
                   : status === 'ready'
                   ? 'Audio Breakdown Ready!'
                   : status === 'failed'
@@ -308,7 +350,7 @@ export default function ProcessingScreen() {
               </Text>
               <Text
                 variant="caption"
-                rawColor={status === 'waiting_for_capacity' ? C.warning : C.textTertiary}
+                rawColor={status === 'waiting_for_capacity' ? '#FFB300' : C.textTertiary}
                 numberOfLines={1}
               >
                 {status === 'ready'
@@ -316,7 +358,7 @@ export default function ProcessingScreen() {
                   : status === 'failed'
                   ? effectiveJob.error_message || 'Content could not be synthesized'
                   : status === 'waiting_for_capacity'
-                  ? 'Your audio will continue automatically'
+                  ? (resumeCountdown ? `${resumeCountdown} • Resuming automatically` : 'Resuming automatically shortly')
                   : remainingEstimate}
               </Text>
             </View>
@@ -330,17 +372,17 @@ export default function ProcessingScreen() {
           )}
         </GlassCard>
 
-        {/* High Demand / Waiting for Capacity Banner */}
+        {/* Waiting for Capacity / Short Break Banner */}
         {status === 'waiting_for_capacity' && (
           <GlassCard style={styles.stuckCard} padding={12} borderRadius={14}>
             <View style={styles.stuckRow}>
-              <Clock size={18} color={C.warning} />
+              <Clock size={18} color="#FFB300" />
               <View style={{ flex: 1, marginLeft: 8 }}>
-                <Text variant="subhead" rawColor={C.warning} style={{ fontWeight: '700' }}>
-                  High Demand Right Now
+                <Text variant="subhead" rawColor="#FFB300" style={{ fontWeight: '700' }}>
+                  {resumeCountdown || 'Taking a short break'}
                 </Text>
                 <Text variant="caption" rawColor={C.textSecondary} style={{ marginTop: 2 }}>
-                  Your audio will continue automatically as AI models cool down. Your progress is saved.
+                  Our AI voice is catching its breath. Your progress is saved and synthesis will resume automatically from this exact step.
                 </Text>
               </View>
             </View>

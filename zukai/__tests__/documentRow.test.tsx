@@ -94,7 +94,7 @@ describe('DocumentRow Component', () => {
 
     const titleNode = screen.getByText(longTitle);
     expect(titleNode).toBeTruthy();
-    expect(screen.getByText('WAITING')).toBeTruthy();
+    expect(screen.getByText('PAUSED')).toBeTruthy();
     expect(screen.getByText('HINGLISH')).toBeTruthy();
     expect(screen.getByText('DEEP')).toBeTruthy();
   });

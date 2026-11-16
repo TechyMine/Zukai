@@ -121,3 +121,13 @@ Run end-to-end connectivity, credential, audio codec, and model fallback tests:
 cd worker
 npm run doctor
 ```
+
+---
+
+## 7. Production Requirements & Terms Notice
+
+> [!WARNING] Production Deployment Requirement
+> **Production requires a paid-tier (Pay-as-you-go) Google Cloud / AI Studio project.**
+> - **Free-Tier Data Terms:** On Google AI Studio's Free Tier, Google's Terms of Service state that prompt, text, and audio inputs and outputs may be reviewed by human reviewers and used to improve Google products and services.
+> - **Privacy & SLAs:** For production customer data privacy, enterprise SLAs, and uncapped quota ceilings, the project must be upgraded to a paid Google Cloud account where data is not logged or used for model training.
+
