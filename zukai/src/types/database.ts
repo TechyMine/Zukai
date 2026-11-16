@@ -307,6 +307,9 @@ export interface Database {
           format: string;
           bitrate_kbps: number;
           file_size_bytes: number;
+          waveform_peaks: number[] | null;
+          sha256: string | null;
+          hidden: boolean;
           created_at: string;
         };
         Insert: {
@@ -320,6 +323,9 @@ export interface Database {
           format?: string;
           bitrate_kbps?: number;
           file_size_bytes: number;
+          waveform_peaks?: number[] | null;
+          sha256?: string | null;
+          hidden?: boolean;
           created_at?: string;
         };
         Update: {
@@ -333,6 +339,9 @@ export interface Database {
           format?: string;
           bitrate_kbps?: number;
           file_size_bytes?: number;
+          waveform_peaks?: number[] | null;
+          sha256?: string | null;
+          hidden?: boolean;
           created_at?: string;
         };
         Relationships: [];
@@ -401,6 +410,9 @@ export interface Database {
           position_seconds: number;
           speed: number;
           completed: boolean;
+          device_id: string | null;
+          device_label: string | null;
+          client_ts: string | null;
           updated_at: string;
         };
         Insert: {
@@ -409,6 +421,9 @@ export interface Database {
           position_seconds?: number;
           speed?: number;
           completed?: boolean;
+          device_id?: string | null;
+          device_label?: string | null;
+          client_ts?: string | null;
           updated_at?: string;
         };
         Update: {
@@ -417,7 +432,55 @@ export interface Database {
           position_seconds?: number;
           speed?: number;
           completed?: boolean;
+          device_id?: string | null;
+          device_label?: string | null;
+          client_ts?: string | null;
           updated_at?: string;
+        };
+        Relationships: [];
+      };
+      bookmarks: {
+        Row: {
+          id: string;
+          user_id: string;
+          track_id: string;
+          position_seconds: number;
+          note: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string;
+          track_id: string;
+          position_seconds: number;
+          note?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          track_id?: string;
+          position_seconds?: number;
+          note?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      listening_daily: {
+        Row: {
+          user_id: string;
+          day: string;
+          seconds: number;
+        };
+        Insert: {
+          user_id?: string;
+          day?: string;
+          seconds?: number;
+        };
+        Update: {
+          user_id?: string;
+          day?: string;
+          seconds?: number;
         };
         Relationships: [];
       };
@@ -715,10 +778,46 @@ export interface Database {
         Args: {
           p_track_id: string;
           p_position_seconds: number;
-          p_speed: number;
-          p_completed: boolean;
+          p_speed?: number;
+          p_completed?: boolean;
+          p_device_id?: string | null;
+          p_device_label?: string | null;
+          p_client_ts?: string | null;
         };
         Returns: Database['public']['Tables']['playback_progress']['Row'];
+      };
+      add_listening_seconds: {
+        Args: {
+          p_seconds: number;
+          p_day?: string;
+        };
+        Returns: void;
+      };
+      request_audio_url: {
+        Args: {
+          p_track_id: string;
+          p_purpose?: string;
+        };
+        Returns: string;
+      };
+      restore_document: {
+        Args: {
+          p_document_id: string;
+        };
+        Returns: void;
+      };
+      list_documents: {
+        Args: {
+          p_search?: string | null;
+          p_status_filter?: string | null;
+          p_language_filter?: string | null;
+          p_favorites_only?: boolean;
+          p_sort?: string;
+          p_cursor_created_at?: string | null;
+          p_cursor_id?: string | null;
+          p_limit?: number;
+        };
+        Returns: Database['public']['Tables']['documents']['Row'][];
       };
       get_usage_summary: {
         Args: {

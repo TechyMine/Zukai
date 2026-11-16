@@ -14,6 +14,7 @@ import { mapErrorToCode, WorkerError, WORKER_ERROR_CODES } from './errors.js';
 import { logger } from './logger.js';
 import { computeSha256, findReusableTrack, saveArtifact, getArtifact } from './ai/artifactManager.js';
 import { CapacityExhaustedError } from './ai/router.js';
+import { analyzeAudioBuffer } from './audio/peaks.js';
 
 let isRunning = false;
 let activeJobCount = 0;
@@ -251,6 +252,22 @@ export async function processJob(job: ClaimedJob): Promise<void> {
       },
       geminiCostMicros: script.costMicros,
     });
+
+    // Non-blocking waveform peaks and SHA-256 computation
+    try {
+      const { sha256, waveformPeaks } = await analyzeAudioBuffer(audioResult.audioBuffer);
+      if (waveformPeaks.length > 0 || sha256) {
+        await supabaseAdmin
+          .from('audio_tracks')
+          .update({
+            waveform_peaks: waveformPeaks.length > 0 ? waveformPeaks : null,
+            sha256: sha256 || null,
+          })
+          .eq('job_id', job.job_id);
+      }
+    } catch (peaksErr) {
+      logger.warn({ jobId: job.job_id, err: peaksErr }, 'Failed to save waveform peaks or sha256 (non-fatal)');
+    }
 
     logger.info({ jobId: job.job_id, durationSeconds: audioResult.durationSeconds }, 'Job completed successfully');
   } catch (err: unknown) {
