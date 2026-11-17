@@ -19,11 +19,13 @@ export const supabase = createClient<Database>(env.EXPO_PUBLIC_SUPABASE_URL, env
   },
 });
 
-// Refresh token when app comes back to foreground
-AppState.addEventListener('change', (state) => {
-  if (state === 'active') {
-    supabase.auth.startAutoRefresh();
-  } else {
-    supabase.auth.stopAutoRefresh();
-  }
-});
+// Refresh token when app comes back to foreground (native only)
+if (typeof window !== 'undefined' || typeof AppState?.addEventListener === 'function') {
+  AppState.addEventListener('change', (state) => {
+    if (state === 'active') {
+      supabase.auth.startAutoRefresh();
+    } else {
+      supabase.auth.stopAutoRefresh();
+    }
+  });
+}
