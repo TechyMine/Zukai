@@ -28,7 +28,7 @@ export function ProgressBar({
       {clamped > 0 && (
         <View style={[styles.fillWrapper, { width: `${clamped}%`, borderRadius: height / 2 }]}>
           <LinearGradient
-            colors={['#A4F924', '#8EF20F', '#68C400']}
+            colors={['#C6FF5C', '#8EF20F', '#62DB0B']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={StyleSheet.absoluteFill}
@@ -36,7 +36,7 @@ export function ProgressBar({
 
           {/* Top Specular Highlight Half-Pill */}
           <LinearGradient
-            colors={['rgba(255, 255, 255, 0.45)', 'rgba(255, 255, 255, 0.05)']}
+            colors={['rgba(255, 255, 255, 0.55)', 'rgba(255, 255, 255, 0.00)']}
             start={{ x: 0.5, y: 0 }}
             end={{ x: 0.5, y: 1 }}
             style={[styles.highlight, { height: Math.floor(height * 0.45), borderTopLeftRadius: height / 2, borderTopRightRadius: height / 2 }]}
@@ -44,7 +44,7 @@ export function ProgressBar({
           />
 
           {/* Bottom Tactile Edge */}
-          <View style={styles.bottomEdge} pointerEvents="none" />
+          <View style={[styles.bottomEdge, { borderBottomColor: '#55D80B' }]} pointerEvents="none" />
 
           {/* Value text inside when wide enough */}
           {showText && (

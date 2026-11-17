@@ -48,7 +48,15 @@ try {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type ButtonVariant = 'primary' | 'secondary' | 'tertiary' | 'destructive' | 'icon' | 'floating';
+export type ButtonVariant =
+  | 'primary'
+  | 'secondary'
+  | 'dark-glossy'
+  | 'glass'
+  | 'destructive'
+  | 'tertiary'
+  | 'icon'
+  | 'floating';
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
 export interface ShinyButtonProps {
@@ -148,16 +156,18 @@ export function ShinyButton({
 
   // ── Style resolution by variant ──────────────────────────────────────────
   const isPrimary = variant === 'primary';
-  const isSecondary = variant === 'secondary';
+  const isDarkGlossy = variant === 'dark-glossy';
+  const isGlass = variant === 'glass' || variant === 'secondary' || variant === 'tertiary';
   const isDestructive = variant === 'destructive';
-  const isGhost = variant === 'tertiary';
   const isIcon = variant === 'icon';
-  const isFloating = variant === 'floating';
 
-  const isGlassStyle = isSecondary || isGhost;
   const outerGlowColor = isDestructive
     ? 'rgba(255,61,113,0.35)'
-    : colors.glass.glowGreen;
+    : isPrimary
+    ? 'rgba(142,242,15,0.35)'
+    : isDarkGlossy
+    ? 'rgba(0,0,0,0.45)'
+    : 'rgba(255,255,255,0.08)';
 
   // ── Gradient selection ───────────────────────────────────────────────────
   let baseGradientColors: readonly string[];
@@ -166,23 +176,28 @@ export function ShinyButton({
 
   if (isDestructive) {
     baseGradientColors = gradients.button.destructive.colors;
-  } else if (isGlassStyle || isGhost) {
-    baseGradientColors = gradients.button.secondaryGlass.colors;
+  } else if (isDarkGlossy) {
+    // Dark glossy: #1A242B to #0B1418
+    baseGradientColors = ['#1A242B', '#0B1418'];
+    baseGradientStart = { x: 0, y: 0 };
+    baseGradientEnd = { x: 0, y: 1 };
+  } else if (isGlass) {
+    // Glass: rgba white 8% to 4%
+    baseGradientColors = ['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.04)'];
     baseGradientStart = { x: 0, y: 0 };
     baseGradientEnd = { x: 0, y: 1 };
   } else {
-    baseGradientColors = gradients.button.primary.colors;
+    // Lime: #C6FF5C to #8EF20F to #62DB0B
+    baseGradientColors = ['#C6FF5C', '#8EF20F', '#62DB0B'];
   }
 
-  const textColor = isGlassStyle || isGhost
-    ? colors.text.primary
+  const textColor = isPrimary
+    ? '#0B1418' // Dark text on Lime button for AA contrast
     : isDestructive
-    ? '#fff'
-    : colors.text.inverse;
+    ? '#FFFFFF'
+    : '#F4F7F2';
 
   const iconColor = textColor;
-
-  const iconWidth = isIcon ? sizeToken.height : undefined;
   const hitSlop = { top: 8, bottom: 8, left: 8, right: 8 };
 
   return (
@@ -190,13 +205,13 @@ export function ShinyButton({
       style={[
         animatedContainer,
         fullWidth && styles.fullWidth,
-        // Outer glow shadow (Android elevation on its own layer)
-        isPrimary && {
+        // Outer glow shadow
+        (isPrimary || isDestructive || isDarkGlossy) && {
           shadowColor: outerGlowColor,
-          shadowOffset: { width: 0, height: 6 },
-          shadowOpacity: 1,
-          shadowRadius: 16,
-          elevation: 10,
+          shadowOffset: { width: 0, height: isPrimary ? 8 : 4 },
+          shadowOpacity: isPrimary ? 0.35 : 0.5,
+          shadowRadius: isPrimary ? 20 : 12,
+          elevation: isPrimary ? 8 : 4,
         },
         style,
       ]}
@@ -212,15 +227,15 @@ export function ShinyButton({
         style={[
           styles.pressable,
           {
-            height: isIcon ? sizeToken.height : sizeToken.height,
+            height: sizeToken.height,
             width: isIcon ? sizeToken.height : fullWidth ? '100%' : undefined,
             borderRadius: isIcon ? sizeToken.height / 2 : br,
             overflow: 'hidden',
-            opacity: disabled ? 0.4 : 1,
+            opacity: disabled ? 0.45 : 1,
           },
         ]}
       >
-        {/* Layer 2: Base Gradient */}
+        {/* Layer 1: Base Gradient */}
         <LinearGradient
           colors={baseGradientColors as unknown as [string, string, ...string[]]}
           start={baseGradientStart}
@@ -228,53 +243,64 @@ export function ShinyButton({
           style={StyleSheet.absoluteFill}
         />
 
-        {/* Layer 3: 1px Inner Rim Border */}
+        {/* Layer 2a: Specular Highlight Curved Crescent (top 45%, 55% to 0% opacity with elliptical bottom) */}
+        <LinearGradient
+          colors={['rgba(255, 255, 255, 0.55)', 'rgba(255, 255, 255, 0.00)']}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={[
+            StyleSheet.absoluteFill,
+            {
+              height: '45%',
+              borderTopLeftRadius: isIcon ? sizeToken.height / 2 : br,
+              borderTopRightRadius: isIcon ? sizeToken.height / 2 : br,
+              borderBottomLeftRadius: br * 1.5,
+              borderBottomRightRadius: br * 1.5,
+              opacity: isDarkGlossy ? 0.25 : 1,
+            },
+          ]}
+          pointerEvents="none"
+        />
+
+        {/* Layer 2b: Inner 1px top stroke (white 60% fading to 0) */}
         <View
           style={[
             StyleSheet.absoluteFill,
             {
               borderRadius: isIcon ? sizeToken.height / 2 : br,
-              borderWidth: 1,
-              borderColor: isPrimary
-                ? 'rgba(255,255,255,0.35)'
-                : 'rgba(255,255,255,0.12)',
+              borderTopWidth: 1,
+              borderTopColor: isPrimary
+                ? 'rgba(255,255,255,0.60)'
+                : isDarkGlossy
+                ? 'rgba(255,255,255,0.20)'
+                : 'rgba(255,255,255,0.15)',
+              borderLeftWidth: 1,
+              borderRightWidth: 1,
+              borderLeftColor: isPrimary ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.06)',
+              borderRightColor: isPrimary ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.06)',
+            },
+          ]}
+          pointerEvents="none"
+        />
+
+        {/* Layer 2c: 2dp inner bottom lip for tactile 3D feel */}
+        <View
+          pointerEvents="none"
+          style={[
+            StyleSheet.absoluteFill,
+            {
+              borderBottomWidth: 2,
+              borderBottomColor: isPrimary
+                ? '#55D80B' // Darker green lip
+                : isDarkGlossy
+                ? '#050B0D' // Darker black lip
+                : 'rgba(0,0,0,0.3)',
+              borderRadius: isIcon ? sizeToken.height / 2 : br,
             },
           ]}
         />
 
-        {/* Layer 3b: Tactile 3D Bottom Edge */}
-        {isPrimary && (
-          <View
-            pointerEvents="none"
-            style={[
-              StyleSheet.absoluteFill,
-              {
-                borderBottomWidth: 3,
-                borderBottomColor: '#63B300',
-                borderRadius: isIcon ? sizeToken.height / 2 : br,
-              },
-            ]}
-          />
-        )}
-
-        {/* Layer 4: Gloss Top Half-Pill */}
-        {isPrimary && (
-          <LinearGradient
-            colors={['rgba(255,255,255,0.40)', 'rgba(255,255,255,0.00)']}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
-            style={[
-              StyleSheet.absoluteFill,
-              {
-                height: '45%',
-                borderTopLeftRadius: br,
-                borderTopRightRadius: br,
-              },
-            ]}
-          />
-        )}
-
-        {/* Layer 5: Moving Shimmer Bar */}
+        {/* Layer 3: Moving Shimmer sweep bar (idle shimmer every ~5s on primary CTA) */}
         {runShimmer && !disabled && (
           <Animated.View
             style={[
@@ -286,7 +312,7 @@ export function ShinyButton({
           />
         )}
 
-        {/* Layer 6: Content */}
+        {/* Layer 4: Content */}
         <View
           style={[
             styles.content,
@@ -296,7 +322,7 @@ export function ShinyButton({
           {loading ? (
             <ActivityIndicator
               size="small"
-              color={isPrimary ? colors.text.inverse : colors.brand.hero}
+              color={isPrimary ? '#0B1418' : '#8EF20F'}
             />
           ) : (
             <>
@@ -308,9 +334,9 @@ export function ShinyButton({
                   variant="callout"
                   rawColor={textColor}
                   style={{
-                    fontWeight: isPrimary ? '800' : '600',
+                    fontWeight: isPrimary ? '800' : '700',
                     fontSize: sizeToken.fontSize,
-                    letterSpacing: isPrimary ? 0.8 : 0,
+                    letterSpacing: isPrimary ? 0.5 : 0,
                   }}
                 >
                   {isPrimary ? label.toUpperCase() : label}

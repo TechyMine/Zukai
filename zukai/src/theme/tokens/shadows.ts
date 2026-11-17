@@ -41,23 +41,41 @@ export const shadows = {
     css: '0px 12px 32px rgba(0, 0, 0, 0.65)',
   },
 
-  // 2. Signature Brand Neon Green Glows
+  // 2. Signature Brand Neon Green Glows (Phase UI-V2 Spec: rgba(142,242,15,0.35), blur 24, offset y 8)
+  limeGlow: {
+    shadowColor: '#8EF20F',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 24,
+    elevation: 8,
+    css: '0px 8px 24px rgba(142, 242, 15, 0.35)',
+  },
+
+  limeCardGlow: {
+    shadowColor: '#8EF20F',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 24,
+    elevation: 8,
+    css: '0px 8px 24px rgba(142, 242, 15, 0.35)',
+  },
+
   buttonGlow: {
-    shadowColor: '#92F702',
+    shadowColor: '#8EF20F',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.40,
     shadowRadius: 16,
     elevation: 8,
-    css: '0px 4px 20px rgba(146, 247, 2, 0.38)',
+    css: '0px 4px 20px rgba(142, 242, 15, 0.38)',
   },
 
   buttonGlowIntense: {
-    shadowColor: '#92F702',
+    shadowColor: '#8EF20F',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.60,
     shadowRadius: 24,
     elevation: 12,
-    css: '0px 6px 28px rgba(146, 247, 2, 0.55)',
+    css: '0px 6px 28px rgba(142, 242, 15, 0.55)',
   },
 
   visorGlow: {

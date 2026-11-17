@@ -13,9 +13,11 @@ export type MascotPose =
   | 'typing'
   | 'carrying_document'
   | 'trophy'
+  | 'graduation'
   | 'graduation_cap'
   | 'flame'
   | 'hourglass'
+  | 'coffee'
   | 'coffee_break'
   | 'sleeping'
   | 'confused'
@@ -38,36 +40,38 @@ export type MascotPose =
   | 'offline';
 
 export const mascotImages: Record<MascotPose, number> = {
-  base: require('./_base.png'),
-  wave: require('./_base.png'),
-  reading: require('./_base.png'),
-  headphones: require('./_base.png'),
-  lightbulb: require('./_base.png'),
-  typing: require('./_base.png'),
-  carrying_document: require('./_base.png'),
-  trophy: require('./_base.png'),
-  graduation_cap: require('./_base.png'),
-  flame: require('./_base.png'),
-  hourglass: require('./_base.png'),
-  coffee_break: require('./_base.png'),
-  sleeping: require('./_base.png'),
-  confused: require('./_base.png'),
-  download: require('./_base.png'),
-  clock: require('./_base.png'),
-  star: require('./_base.png'),
-  wrench: require('./_base.png'),
-  crown: require('./_base.png'),
-  pointing: require('./_base.png'),
-  thumbs_up: require('./_base.png'),
+  base: require('./wave.png'),
+  wave: require('./wave.png'),
+  reading: require('./reading.png'),
+  headphones: require('./headphones.png'),
+  lightbulb: require('./lightbulb.png'),
+  typing: require('./typing.png'),
+  carrying_document: require('./carrying_document.png'),
+  trophy: require('./trophy.png'),
+  graduation: require('./graduation.png'),
+  graduation_cap: require('./graduation.png'),
+  flame: require('./flame.png'),
+  hourglass: require('./hourglass.png'),
+  coffee: require('./coffee.png'),
+  coffee_break: require('./coffee.png'),
+  sleeping: require('./sleeping.png'),
+  confused: require('./confused.png'),
+  download: require('./carrying_document.png'),
+  clock: require('./hourglass.png'),
+  star: require('./trophy.png'),
+  wrench: require('./typing.png'),
+  crown: require('./crown.png'),
+  pointing: require('./pointing.png'),
+  thumbs_up: require('./thumbs_up.png'),
 
   // Aliases
-  welcome: require('./_base.png'),
-  uploading: require('./_base.png'),
-  thinking: require('./_base.png'),
-  listening: require('./_base.png'),
-  success: require('./_base.png'),
-  error: require('./_base.png'),
-  empty: require('./_base.png'),
-  paywall: require('./_base.png'),
-  offline: require('./_base.png'),
+  welcome: require('./wave.png'),
+  uploading: require('./carrying_document.png'),
+  thinking: require('./confused.png'),
+  listening: require('./headphones.png'),
+  success: require('./thumbs_up.png'),
+  error: require('./confused.png'),
+  empty: require('./reading.png'),
+  paywall: require('./crown.png'),
+  offline: require('./sleeping.png'),
 };

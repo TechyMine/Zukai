@@ -30,3 +30,13 @@ export type { EmptyStateProps } from './EmptyState';
 
 export { BrandLogo } from './BrandLogo';
 
+export { HeroCard } from './HeroCard';
+export type { HeroCardProps, HeroCardVariant, HeroCardSize } from './HeroCard';
+
+export { RoundArrowButton } from './RoundArrowButton';
+export type { RoundArrowButtonProps, RoundArrowVariant } from './RoundArrowButton';
+
+export { HaloPlayButton } from './HaloPlayButton';
+export type { HaloPlayButtonProps } from './HaloPlayButton';
+
+

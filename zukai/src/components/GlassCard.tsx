@@ -36,13 +36,13 @@ export function GlassCard({
   ...rest
 }: GlassCardProps) {
   const { colors } = useTheme();
-  // Compact card radius token = 16
-  const br = borderRadius ?? 16;
-  const cardPadding = padding !== undefined ? padding : 12;
+  // Phase UI-V2: default radius 20 for tiles / cards, padding 16
+  const br = borderRadius ?? 20;
+  const cardPadding = padding !== undefined ? padding : 16;
 
   const borderColor = glow
-    ? colors.glass.borderActive
-    : 'rgba(255, 255, 255, 0.16)';
+    ? 'rgba(142, 242, 15, 0.45)'
+    : 'rgba(255, 255, 255, 0.08)';
 
   const flatStyle = (StyleSheet.flatten(style) || {}) as Record<string, any>;
   const {

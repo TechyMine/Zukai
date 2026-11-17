@@ -29,37 +29,54 @@ export const gradients = {
   // 1. BUTTON GRADIENTS (with gloss reflection)
   // -------------------------------------------------------------
   button: {
+    // Phase UI-V2 Spec: #C6FF5C -> #8EF20F -> #62DB0B
     primary: {
-      colors: ['#A4F924', '#92F702', '#75CE00'],
+      colors: ['#C6FF5C', '#8EF20F', '#62DB0B'],
       locations: [0, 0.5, 1],
       start: { x: 0, y: 0 },
       end: { x: 1, y: 1 },
     } as LinearGradientRecipe,
 
     primaryHover: {
-      colors: ['#B8F95F', '#A4F924', '#85E300'],
+      colors: ['#D1FB97', '#A4F924', '#75CE00'],
       locations: [0, 0.5, 1],
       start: { x: 0, y: 0 },
       end: { x: 1, y: 1 },
     } as LinearGradientRecipe,
 
     primaryPressed: {
-      colors: ['#85E300', '#75CE00', '#5BA300'],
+      colors: ['#8EF20F', '#62DB0B', '#55D80B'],
       locations: [0, 0.5, 1],
       start: { x: 0, y: 0 },
       end: { x: 1, y: 1 },
     } as LinearGradientRecipe,
 
+    // Phase UI-V2 Dark Glossy Button (for use on Lime cards): #1A242B -> #0B1418
+    darkGlossy: {
+      colors: ['#1A242B', '#0B1418'],
+      locations: [0, 1],
+      start: { x: 0, y: 0 },
+      end: { x: 0, y: 1 },
+    } as LinearGradientRecipe,
+
+    // Phase UI-V2 Glass Button: rgba white 8% to 4%
+    glass: {
+      colors: ['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.04)'],
+      locations: [0, 1],
+      start: { x: 0, y: 0 },
+      end: { x: 0, y: 1 },
+    } as LinearGradientRecipe,
+
     // Upper 45% gloss highlight overlay
     shineOverlay: {
-      colors: ['rgba(255, 255, 255, 0.40)', 'rgba(255, 255, 255, 0.00)'],
+      colors: ['rgba(255, 255, 255, 0.55)', 'rgba(255, 255, 255, 0.00)'],
       locations: [0, 1],
       start: { x: 0.5, y: 0 },
       end: { x: 0.5, y: 1 },
     } as LinearGradientRecipe,
 
     secondaryGlass: {
-      colors: ['rgba(255, 255, 255, 0.10)', 'rgba(255, 255, 255, 0.03)'],
+      colors: ['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.04)'],
       locations: [0, 1],
       start: { x: 0, y: 0 },
       end: { x: 0, y: 1 },
@@ -74,25 +91,49 @@ export const gradients = {
   },
 
   // -------------------------------------------------------------
-  // 2. CARD & ELEMENT GRADIENTS
+  // 2. CARD & ELEMENT GRADIENTS (Phase UI-V2)
   // -------------------------------------------------------------
   card: {
-    surface: {
-      colors: ['rgba(19, 40, 48, 0.75)', 'rgba(13, 30, 36, 0.65)'],
+    // Lime Card Gradient (160 deg: #E4FFA3 -> #B6F94A -> #8EF20F -> #55D80B)
+    lime: {
+      colors: ['#E4FFA3', '#B6F94A', '#8EF20F', '#55D80B'],
+      locations: [0, 0.35, 0.70, 1],
+      start: { x: 0.15, y: 0 },
+      end: { x: 0.85, y: 1 },
+    } as LinearGradientRecipe,
+
+    // Forest Card Gradient (deep green #0F2A12 to #0B1418 with lime glow)
+    forest: {
+      colors: ['#0F2A12', '#0B1418'],
       locations: [0, 1],
       start: { x: 0, y: 0 },
-      end: { x: 1, y: 1 },
+      end: { x: 0.6, y: 1 },
+    } as LinearGradientRecipe,
+
+    // Dark Card Surface (#12191E to #0E1418)
+    darkSurface: {
+      colors: ['#12191E', '#0E1418'],
+      locations: [0, 1],
+      start: { x: 0, y: 0 },
+      end: { x: 0, y: 1 },
+    } as LinearGradientRecipe,
+
+    surface: {
+      colors: ['#12191E', '#0E1418'],
+      locations: [0, 1],
+      start: { x: 0, y: 0 },
+      end: { x: 0, y: 1 },
     } as LinearGradientRecipe,
 
     highlightBorder: {
-      colors: ['rgba(255, 255, 255, 0.35)', 'rgba(255, 255, 255, 0.05)', 'rgba(146, 247, 2, 0.30)'],
+      colors: ['rgba(255, 255, 255, 0.35)', 'rgba(255, 255, 255, 0.05)', 'rgba(142, 242, 15, 0.30)'],
       locations: [0, 0.6, 1],
       start: { x: 0, y: 0 },
       end: { x: 1, y: 1 },
     } as LinearGradientRecipe,
 
     progressRing: {
-      colors: ['#92F702', '#0BF807', '#00B0FF'],
+      colors: ['#8EF20F', '#0BF807', '#00B0FF'],
       locations: [0, 0.6, 1],
       start: { x: 0, y: 0 },
       end: { x: 1, y: 0 },

@@ -70,5 +70,7 @@ module.exports = {
   DeviceEventEmitter: { addListener: jest.fn(() => ({ remove: jest.fn() })), emit: jest.fn() },
   Dimensions: { get: jest.fn(() => ({ width: 390, height: 844, scale: 3, fontScale: 1 })), addEventListener: jest.fn() },
   Keyboard: { dismiss: jest.fn(), addListener: jest.fn(() => ({ remove: jest.fn() })) },
+  processColor: (c) => c,
+  AccessibilityInfo: { isReduceMotionEnabled: jest.fn().mockResolvedValue(false), addEventListener: jest.fn() },
 };
 

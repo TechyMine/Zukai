@@ -64,14 +64,25 @@ function TabItem({
           accessibilityRole="button"
           accessibilityLabel="Upload document"
         >
-          <LinearGradient
-            colors={['#A4F924', '#8EF20F', '#68C400']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.centerGradient}
-          >
-            <Icon size={22} color={colors.text.inverse} strokeWidth={2.5} />
-          </LinearGradient>
+          {/* Outer Halo Ring */}
+          <View style={styles.centerHaloRing}>
+            <LinearGradient
+              colors={['#C6FF5C', '#8EF20F', '#62DB0B']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.centerGradient}
+            >
+              {/* Top Gloss Crescent */}
+              <LinearGradient
+                colors={['rgba(255, 255, 255, 0.55)', 'rgba(255, 255, 255, 0.00)']}
+                start={{ x: 0.5, y: 0 }}
+                end={{ x: 0.5, y: 1 }}
+                style={styles.centerTopGloss}
+                pointerEvents="none"
+              />
+              <Icon size={22} color="#0B1418" strokeWidth={2.6} />
+            </LinearGradient>
+          </View>
         </Pressable>
       </Animated.View>
     );
@@ -89,9 +100,9 @@ function TabItem({
         accessibilityLabel={label}
       >
         {active && (
-          <View
-            style={[styles.activeIndicator, { backgroundColor: '#8EF20F' }]}
-          />
+          <View style={styles.activeIndicatorWrap}>
+            <View style={[styles.activeIndicator, { backgroundColor: '#8EF20F' }]} />
+          </View>
         )}
         <Icon
           size={20}
@@ -232,10 +243,18 @@ const styles = StyleSheet.create({
     minHeight: 44,
     justifyContent: 'center',
   },
-  activeIndicator: {
+  activeIndicatorWrap: {
     position: 'absolute',
     top: -2,
-    width: 16,
+    alignItems: 'center',
+    shadowColor: '#8EF20F',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  activeIndicator: {
+    width: 20,
     height: 3,
     borderRadius: 1.5,
   },
@@ -247,18 +266,35 @@ const styles = StyleSheet.create({
   centerButton: {
     marginHorizontal: 4,
   },
+  centerHaloRing: {
+    padding: 3,
+    borderRadius: 28,
+    borderWidth: 1.5,
+    borderColor: 'rgba(142, 242, 15, 0.45)',
+    backgroundColor: 'rgba(142, 242, 15, 0.08)',
+  },
   centerGradient: {
     width: 48,
     height: 48,
     borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
     shadowColor: '#8EF20F',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-    elevation: 6,
-    borderBottomWidth: 2.5,
-    borderBottomColor: '#63B300',
+    shadowOpacity: 0.45,
+    shadowRadius: 12,
+    elevation: 8,
+    borderBottomWidth: 2,
+    borderBottomColor: '#55D80B',
+  },
+  centerTopGloss: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '45%',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
   },
 });

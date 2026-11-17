@@ -16,12 +16,14 @@ module.exports = {
   ],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
+    '\\.(jpg|jpeg|png|webp|gif|svg)$': '<rootDir>/__mocks__/fileMock.js',
     // expo-file-system v2 ships a /legacy sub-path; map it to the same mock
     '^expo-file-system/legacy$': '<rootDir>/__mocks__/expo-file-system-legacy.js',
     '^expo-file-system$': '<rootDir>/__mocks__/expo-file-system-legacy.js',
     // Mock react-native itself (avoid ESM parse issues in node environment)
     '^react-native$': '<rootDir>/__mocks__/react-native.js',
     '^react-native/(.*)$': '<rootDir>/__mocks__/react-native.js',
+    '^react-native-reanimated$': '<rootDir>/__mocks__/react-native-reanimated.js',
     '^@react-native-async-storage/async-storage$': '<rootDir>/__mocks__/async-storage.js',
   },
   testMatch: ['**/__tests__/**/*.test.[jt]s?(x)', '**/?(*.)+(spec|test).[jt]s?(x)'],

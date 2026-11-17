@@ -1,8 +1,7 @@
 /**
- * ZUKAI — Home Dashboard Screen (Phase 7C Polish)
- * Connected to live Supabase data layer via TanStack Query hooks.
- * Displays user profile, streak calendar, daily goal progress, 2x2 stat tiles,
- * compact continue listening hero card, quick actions, and standardized DocumentRow items.
+ * ZUKAI — Home Dashboard Screen (Phase UI-V2)
+ * High-density dark glossy AI dashboard matching the reference specification.
+ * Fully wired to live Supabase backend data, real documents, real streak, real progress.
  */
 
 import React, { useState, useEffect } from 'react';
@@ -11,7 +10,9 @@ import {
   StyleSheet,
   Pressable,
   RefreshControl,
+  ScrollView,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import Animated, {
   useSharedValue,
@@ -24,7 +25,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import {
   Bell,
   Play,
-  ChevronRight,
   Pause,
   Upload,
   BookOpen,
@@ -35,30 +35,36 @@ import {
   Clock,
   History,
   FileText,
-  X,
+  Sparkles,
+  ArrowUpRight,
+  TrendingUp,
 } from 'lucide-react-native';
 import { useQuery } from '@tanstack/react-query';
 import { ScreenContainer } from '@/components/ScreenContainer';
 import { GlassCard } from '@/components/GlassCard';
+import { HeroCard } from '@/components/HeroCard';
+import { ShinyButton } from '@/components/ShinyButton';
+import { RoundArrowButton } from '@/components/RoundArrowButton';
+import { HaloPlayButton } from '@/components/HaloPlayButton';
 import { Text } from '@/components/Text';
 import { Mascot } from '@/components/Mascot';
-import { BrandLogo } from '@/components/BrandLogo';
-import { StatTile } from '@/components/StatTile';
 import { ProgressBar } from '@/components/ProgressBar';
-import { EmptyState } from '@/components/EmptyState';
 import { DocumentRow } from '@/components/DocumentRow';
+import { EmptyState } from '@/components/EmptyState';
 import { useLibrary } from '@/features/library/hooks/useLibrary';
 import { useUsageSummary } from '@/features/usage/hooks/useUsageSummary';
 import { useAuthStore } from '@/lib/authStore';
 import { usePlaybackStore } from '@/features/playback/playbackStore';
 import { supabase } from '@/lib/supabase';
+import { mascotImages } from '../../assets/mascot/index';
 
 const C = {
+  nearBlack: '#0B1418',
   brandHero: '#8EF20F',
   textPrimary: '#F4F7F2',
   textSecondary: '#B5C4CC',
   textTertiary: '#6B828F',
-  textInverse: '#09161B',
+  textDark: '#0B1418',
   success: '#00E676',
 };
 
@@ -88,11 +94,11 @@ function formatMinutes(totalMinutes: number): string {
   return `${h}h ${m}m`;
 }
 
-interface QuickAction {
-  key: string;
-  label: string;
-  icon: React.ReactNode;
-  onPress: () => void;
+function getTimeOfDayGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning!';
+  if (hour < 18) return 'Good afternoon!';
+  return 'Good evening!';
 }
 
 interface ActiveJob {
@@ -107,8 +113,6 @@ interface LearningStats {
   streak_days: number;
 }
 
-const WEEK_DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-
 export default function HomeScreen() {
   const router = useRouter();
   const { profile } = useAuthStore();
@@ -117,6 +121,12 @@ export default function HomeScreen() {
   const { data: libraryItems = [], isLoading: isLoadingLibrary, error: libraryError, refetch: refetchLibrary } = useLibrary();
   const { data: usageSummary, refetch: refetchUsage } = useUsageSummary();
   const [refreshing, setRefreshing] = useState(false);
+
+  const [learningStats, setLearningStats] = useState<LearningStats>({
+    total_minutes: 0,
+    tracks_completed: 0,
+    streak_days: 1,
+  });
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -131,14 +141,6 @@ export default function HomeScreen() {
     ]).catch(() => {});
     setRefreshing(false);
   };
-
-  const [showMascotTip, setShowMascotTip] = useState(true);
-
-  const [learningStats, setLearningStats] = useState<LearningStats>({
-    total_minutes: 0,
-    tracks_completed: 0,
-    streak_days: 1,
-  });
 
   useEffect(() => {
     supabase.rpc('get_learning_stats').then(({ data, error }) => {
@@ -162,44 +164,15 @@ export default function HomeScreen() {
     staleTime: 0,
   });
 
-  const greetingName = profile?.full_name ? profile.full_name.split(' ')[0] : 'Scholar';
+  const greetingName = profile?.full_name ? profile.full_name.split(' ')[0] : 'Explorer';
   const readyItems = libraryItems.filter((i) => i.track && i.document.status === 'ready');
   const activeHeroItem = readyItems[0] || libraryItems[0];
   const isHeroPlaying = Boolean(activeHeroItem?.track && activeTrack?.id === activeHeroItem.track.id && isStorePlaying);
 
-  // Daily goal calculation
+  // Daily goal calculation (10 min goal)
   const dailyGoalMinutes = 10;
   const minutesListenedToday = Math.min(dailyGoalMinutes, Math.round(learningStats.total_minutes));
   const dailyGoalPercent = Math.min(100, Math.round((minutesListenedToday / dailyGoalMinutes) * 100));
-
-  const currentDayIndex = (new Date().getDay() + 6) % 7; // Mon=0 .. Sun=6
-
-  const quickActions: QuickAction[] = [
-    {
-      key: 'upload',
-      label: 'Upload',
-      icon: <Upload size={18} color={C.brandHero} strokeWidth={2.2} />,
-      onPress: () => router.push('/(tabs)/upload'),
-    },
-    {
-      key: 'library',
-      label: 'Library',
-      icon: <BookOpen size={18} color={C.brandHero} strokeWidth={2.2} />,
-      onPress: () => router.push('/(tabs)/library'),
-    },
-    {
-      key: 'downloads',
-      label: 'Downloads',
-      icon: <Download size={18} color={C.brandHero} strokeWidth={2.2} />,
-      onPress: () => router.push('/downloads'),
-    },
-    {
-      key: 'history',
-      label: 'History',
-      icon: <History size={18} color={C.brandHero} strokeWidth={2.2} />,
-      onPress: () => router.push('/history'),
-    },
-  ];
 
   return (
     <ScreenContainer
@@ -214,549 +187,783 @@ export default function HomeScreen() {
         />
       }
     >
-      {/* 1. Header Row (Height 48) */}
-      <View style={styles.topBar}>
-        <View style={styles.topBarLeft}>
-          <BrandLogo size={36} showText={false} />
-          <View style={{ marginLeft: 10 }}>
-            <Text variant="caption" rawColor={C.textTertiary} style={styles.greetingCaption}>
-              WELCOME BACK
+      {/* ─── 1. Header Row (Reference Structure) ───────────────────────────── */}
+      <View style={styles.headerRow}>
+        <View style={styles.headerLeft}>
+          {/* Zuke Face Avatar */}
+          <View style={styles.avatarBorder}>
+            <Image
+              source={mascotImages.base}
+              style={styles.avatarImg}
+              contentFit="cover"
+            />
+          </View>
+          <View style={styles.headerGreetingCol}>
+            <Text variant="caption" rawColor={C.textTertiary} style={styles.greetingSmall}>
+              {getTimeOfDayGreeting()}
             </Text>
-            <Text variant="headline" rawColor={C.textPrimary} style={styles.greetingTitle}>
+            <Text variant="title2" rawColor={C.textPrimary} style={styles.greetingLarge}>
               {greetingName}
             </Text>
           </View>
         </View>
 
-        <View style={styles.topBarRight}>
-          <View style={styles.streakChip}>
-            <Flame size={14} color="#FF9500" strokeWidth={2.5} />
-            <Text variant="caption" rawColor="#FF9500" style={styles.streakText}>
-              {learningStats.streak_days}d
-            </Text>
-          </View>
-
+        <View style={styles.headerRight}>
+          {/* Unread Bell Notification Button */}
           <Pressable
-            style={styles.bellBtn}
+            style={styles.bellButton}
             onPress={() => router.push('/(tabs)/settings')}
-            accessibilityLabel="Settings"
+            accessibilityRole="button"
+            accessibilityLabel="Notifications and settings"
           >
-            <Bell size={18} color={C.textSecondary} strokeWidth={2} />
-          </Pressable>
-        </View>
-      </View>
-
-      {/* 2. Weekly Streak Row (S M T W T F S) */}
-      <GlassCard style={styles.weekCard} padding={10} borderRadius={16}>
-        <View style={styles.weekHeader}>
-          <Text variant="caption" rawColor={C.textSecondary} style={{ fontWeight: '700' }}>
-            WEEKLY STREAK
-          </Text>
-          <Text variant="caption" rawColor={C.brandHero} style={{ fontWeight: '700' }}>
-            {learningStats.streak_days} DAYS ON FIRE 🔥
-          </Text>
-        </View>
-        <View style={styles.weekDaysRow}>
-          {WEEK_DAYS.map((day, idx) => {
-            const isToday = idx === currentDayIndex;
-            const isPast = idx < currentDayIndex;
-            const isCompleted = isPast || (isToday && minutesListenedToday > 0);
-
-            return (
-              <View
-                key={`${day}-${idx}`}
-                style={[
-                  styles.dayCircle,
-                  isToday && styles.dayCircleToday,
-                  isCompleted && !isToday && styles.dayCircleCompleted,
-                ]}
-              >
-                <Text
-                  variant="caption"
-                  rawColor={isToday ? '#09161B' : isCompleted ? C.brandHero : C.textTertiary}
-                  style={styles.dayText}
-                >
-                  {day}
-                </Text>
-              </View>
-            );
-          })}
-        </View>
-      </GlassCard>
-
-      {/* 3. Daily Goal Card with Chunky ProgressBar */}
-      <GlassCard style={styles.dailyGoalCard} padding={12} borderRadius={16}>
-        <View style={styles.dailyGoalHeader}>
-          <View style={styles.rowCenter}>
-            <Clock size={16} color={C.brandHero} strokeWidth={2.2} />
-            <Text variant="subhead" rawColor={C.textPrimary} style={{ marginLeft: 6, fontWeight: '700' }}>
-              Daily Learning Goal
-            </Text>
-          </View>
-          <Text variant="caption" rawColor={C.brandHero} style={{ fontWeight: '700' }}>
-            {minutesListenedToday} / {dailyGoalMinutes} min
-          </Text>
-        </View>
-        <ProgressBar progress={dailyGoalPercent} height={14} style={{ marginTop: 8 }} />
-      </GlassCard>
-
-      {/* 4. 2x2 Grid of StatTiles */}
-      <View style={styles.statsGrid}>
-        <View style={styles.statRow}>
-          <StatTile
-            icon={FileText}
-            number={usageSummary?.documents_count ?? libraryItems.length}
-            label="Documents"
-            iconTint="#8EF20F"
-          />
-          <StatTile
-            icon={Headphones}
-            number={formatMinutes(learningStats.total_minutes)}
-            label="Listened"
-            iconTint="#00E676"
-          />
-        </View>
-        <View style={styles.statRow}>
-          <StatTile
-            icon={Flame}
-            number={`${learningStats.streak_days}d`}
-            label="Day Streak"
-            iconTint="#FF9500"
-          />
-          <StatTile
-            icon={CheckCircle2}
-            number={learningStats.tracks_completed}
-            label="Completed"
-            iconTint="#38BDF8"
-          />
-        </View>
-      </View>
-
-      {/* 5. In-Progress / Paused Jobs Banner (Compact) */}
-      {activeJobs.length > 0 && (
-        <Pressable
-          style={styles.jobsBanner}
-          onPress={() => router.push(`/processing/${activeJobs[0].id}` as Parameters<typeof router.push>[0])}
-        >
-          <PulsingDot />
-          <Text variant="subhead" rawColor={C.textPrimary} style={{ flex: 1, marginLeft: 8 }}>
-            {activeJobs.some((j) => j.status === 'waiting_for_capacity')
-              ? 'AI voice catching breath • Resuming automatically'
-              : `${activeJobs.length} explanation${activeJobs.length > 1 ? 's' : ''} generating…`}
-          </Text>
-          <ChevronRight size={16} color={C.textTertiary} />
-        </Pressable>
-      )}
-
-      {/* 6. Quick Actions Strip */}
-      <View style={styles.quickActionsContainer}>
-        {quickActions.map((action) => (
-          <Pressable key={action.key} style={styles.quickActionChip} onPress={action.onPress}>
-            {action.icon}
-            <Text variant="caption" rawColor={C.textSecondary} style={styles.quickActionLabel}>
-              {action.label}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
-      {/* 7. Continue Listening Hero Card (~120dp) */}
-      {!isLoadingLibrary && activeHeroItem && activeHeroItem.track && (
-        <Pressable onPress={() => router.push('/player' as Parameters<typeof router.push>[0])}>
-          <View style={styles.heroWrapper}>
             <LinearGradient
-              colors={['rgba(19,40,48,0.95)', 'rgba(9,22,27,0.98)']}
+              colors={['#1F2B33', '#11181C']}
               start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.heroCard}
-            >
-              <View style={styles.heroTopRow}>
-                <View style={styles.heroDocIcon}>
-                  <Headphones size={18} color={C.brandHero} strokeWidth={2.2} />
+              end={{ x: 0, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            <View style={styles.bellGloss} />
+            <Bell size={18} color={C.textPrimary} strokeWidth={2.2} />
+            {/* Unread Indicator Badge */}
+            <View style={styles.bellBadge} />
+          </Pressable>
+        </View>
+      </View>
+
+      {/* ─── 2. Hero Wide LIME Card: "Turn any document into audio" ──────── */}
+      <View style={styles.sectionWrap}>
+        <HeroCard
+          variant="lime"
+          size="wide"
+          mascot="wave"
+          animated
+          onPress={() => router.push('/(tabs)/upload')}
+          accessibilityLabel="Turn any document into audio, upload now"
+        >
+          <View style={styles.heroLimeContent}>
+            <Text variant="title2" rawColor={C.textDark} style={styles.heroLimeTitle}>
+              Turn any document into audio
+            </Text>
+            <Text variant="footnote" rawColor="rgba(11, 20, 24, 0.75)" style={styles.heroLimeBody}>
+              Upload PDFs, slides or notes to get interactive AI studio lessons.
+            </Text>
+            <View style={styles.heroLimeBtnWrap}>
+              <ShinyButton
+                variant="dark-glossy"
+                size="sm"
+                label="Upload now"
+                icon={<Upload size={14} color="#FFF" />}
+                onPress={() => router.push('/(tabs)/upload')}
+              />
+            </View>
+          </View>
+        </HeroCard>
+      </View>
+
+      {/* ─── 3. In-Progress & Paused Jobs (Compact Glass Cards) ─────────── */}
+      {activeJobs.length > 0 && (
+        <View style={styles.sectionWrap}>
+          <Pressable
+            onPress={() => router.push(`/processing/${activeJobs[0].id}` as any)}
+            accessibilityRole="button"
+            accessibilityLabel="View processing status"
+          >
+            <GlassCard style={styles.jobGlassCard} padding={12} borderRadius={20}>
+              <View style={styles.jobRow}>
+                <View style={styles.jobMascotWrap}>
+                  <Mascot
+                    pose={activeJobs.some((j) => j.status === 'waiting_for_capacity') ? 'coffee' : 'typing'}
+                    size={42}
+                    animated={false}
+                  />
                 </View>
-                <View style={styles.heroTextCol}>
-                  <View style={styles.heroBadgeRow}>
-                    <View style={styles.heroBadge}>
-                      <PulsingDot />
-                      <Text variant="caption" rawColor={C.brandHero} style={styles.badgeText}>
-                        CONTINUE LISTENING
-                      </Text>
-                    </View>
-                    <View style={styles.langPill}>
-                      <Text variant="caption" rawColor="#A2B4BE" style={styles.langText}>
-                        {activeHeroItem.document.title.includes('(Hinglish)') ? 'HINGLISH' : 'EN'}
-                      </Text>
-                    </View>
+                <View style={styles.jobTextCol}>
+                  <View style={styles.jobTitleRow}>
+                    <PulsingDot />
+                    <Text variant="subhead" rawColor={C.textPrimary} style={styles.jobStatusTitle}>
+                      {activeJobs.some((j) => j.status === 'waiting_for_capacity')
+                        ? 'AI Voice Paused • Catching Breath'
+                        : 'Audio Generation In Progress'}
+                    </Text>
                   </View>
-                  <Text variant="headline" rawColor={C.textPrimary} numberOfLines={1} style={styles.heroTitle}>
-                    {activeHeroItem.document.title}
+                  <Text variant="caption" rawColor={C.textTertiary}>
+                    {activeJobs.length} active job{activeJobs.length > 1 ? 's' : ''} • Tap to view real-time log
                   </Text>
                 </View>
+                <RoundArrowButton
+                  onPress={() => router.push(`/processing/${activeJobs[0].id}` as any)}
+                  variant="dark-glossy"
+                  size={32}
+                />
+              </View>
+            </GlassCard>
+          </Pressable>
+        </View>
+      )}
 
-                <Pressable
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    if (activeHeroItem.track) {
-                      if (activeTrack?.id === activeHeroItem.track.id) {
-                        togglePlayPause();
-                      } else {
-                        playTrack(activeHeroItem.track, activeHeroItem.document.title);
-                      }
-                    }
-                  }}
-                  style={styles.heroPlayBtn}
-                >
-                  <LinearGradient
-                    colors={['#A4F924', '#8EF20F', '#68C400']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.playCircle}
-                  >
-                    {isHeroPlaying ? (
-                      <Pause size={16} color={C.textInverse} strokeWidth={2.5} />
-                    ) : (
-                      <Play size={16} color={C.textInverse} strokeWidth={2.5} />
-                    )}
-                  </LinearGradient>
-                </Pressable>
+      {/* ─── 4. Continue Listening (Wide FOREST Card with Real Position) ── */}
+      {!isLoadingLibrary && activeHeroItem && activeHeroItem.track && (
+        <View style={styles.sectionWrap}>
+          <HeroCard
+            variant="forest"
+            size="wide"
+            mascot="headphones"
+            onPress={() => router.push('/player' as any)}
+            accessibilityLabel={`Continue listening: ${activeHeroItem.document.title}`}
+          >
+            <View style={styles.forestContent}>
+              <View style={styles.forestHeaderRow}>
+                <View style={styles.forestBadge}>
+                  <PulsingDot />
+                  <Text variant="caption" rawColor={C.brandHero} style={styles.forestBadgeText}>
+                    CONTINUE LISTENING
+                  </Text>
+                </View>
               </View>
 
-              <View style={styles.heroProgressWrap}>
+              <Text variant="headline" rawColor={C.textPrimary} numberOfLines={1} style={styles.forestDocTitle}>
+                {activeHeroItem.document.title}
+              </Text>
+
+              {/* Real Chunky Progress Bar */}
+              <View style={styles.forestProgressWrap}>
                 <ProgressBar
                   progress={
                     activeHeroItem.track && activeHeroItem.progress
                       ? Math.min(100, Math.round(((activeHeroItem.progress.position_seconds || 0) / (activeHeroItem.track.duration_seconds || 1)) * 100))
                       : 0
                   }
-                  height={8}
+                  height={10}
                 />
               </View>
 
-              <View style={styles.heroFooter}>
+              <View style={styles.forestFooterRow}>
                 <Text variant="caption" rawColor={C.textTertiary}>
                   {formatDuration(Math.round(activeHeroItem.progress?.position_seconds ?? 0))} / {formatDuration(activeHeroItem.track.duration_seconds)}
                 </Text>
-                <Text variant="caption" rawColor={C.brandHero} style={{ fontWeight: '600' }}>
-                  Tap to resume
-                </Text>
+
+                <View style={styles.forestPlayWrap}>
+                  <HaloPlayButton
+                    isPlaying={isHeroPlaying}
+                    size={38}
+                    ringOffset={4}
+                    onPress={() => {
+                      if (activeHeroItem.track) {
+                        if (activeTrack?.id === activeHeroItem.track.id) {
+                          togglePlayPause();
+                        } else {
+                          playTrack(activeHeroItem.track, activeHeroItem.document.title);
+                        }
+                      }
+                    }}
+                  />
+                </View>
               </View>
-            </LinearGradient>
-          </View>
-        </Pressable>
-      )}
-
-      {/* Dismissible Mascot Learning Tip Card (inside content, never overlapping tab bar) */}
-      {showMascotTip && libraryItems.length > 0 && (
-        <GlassCard style={styles.mascotTipCard} padding={10} borderRadius={14}>
-          <View style={styles.mascotTipRow}>
-            <Mascot pose="listening" size={44} />
-            <View style={{ flex: 1, marginLeft: 8 }}>
-              <Text variant="subhead" rawColor={C.textPrimary} style={{ fontWeight: '700', fontSize: 13 }}>
-                Zuke's Audio Tip
-              </Text>
-              <Text variant="caption" rawColor={C.textSecondary} numberOfLines={2}>
-                Listening at 1.25x helps you absorb concepts 20% faster while maintaining full comprehension!
-              </Text>
             </View>
-            <Pressable onPress={() => setShowMascotTip(false)} hitSlop={10} style={{ padding: 4 }}>
-              <X size={16} color={C.textTertiary} />
-            </Pressable>
-          </View>
-        </GlassCard>
+          </HeroCard>
+        </View>
       )}
 
-      {/* 8. Recent Documents Section */}
+      {/* ─── 5. Section "Suggested for you" (Bento Bento Layout) ────────── */}
       <View style={styles.sectionHeader}>
-        <Text variant="headline" rawColor={C.textPrimary}>Recent Documents</Text>
+        <Text variant="title3" rawColor={C.textPrimary} style={styles.sectionHeading}>
+          Suggested for you
+        </Text>
         <Pressable onPress={() => router.push('/(tabs)/library')} hitSlop={8}>
-          <Text variant="subhead" rawColor={C.brandHero}>See all</Text>
+          <Text variant="subhead" rawColor={C.brandHero} style={{ fontWeight: '700' }}>
+            See all
+          </Text>
         </Pressable>
       </View>
 
-      {/* Standardized DocumentRow List */}
+      <View style={styles.bentoRow}>
+        {/* Left: TALL Lime Card (Reach your daily goal) */}
+        <View style={styles.bentoLeftCol}>
+          <HeroCard
+            variant="lime"
+            size="tall"
+            mascot="trophy"
+            onPress={() => router.push('/(tabs)/settings')}
+            accessibilityLabel="Reach your daily goal. Set or view learning targets."
+          >
+            <View style={styles.tallCardContent}>
+              <View style={styles.tallBadge}>
+                <Clock size={12} color="#0B1418" strokeWidth={2.4} />
+                <Text variant="caption" rawColor="#0B1418" style={{ fontWeight: '800', fontSize: 10 }}>
+                  DAILY GOAL
+                </Text>
+              </View>
+
+              <Text variant="headline" rawColor={C.textDark} style={styles.tallTitle}>
+                Reach your daily goal
+              </Text>
+
+              <Text variant="caption" rawColor="rgba(11,20,24,0.70)" style={styles.tallSubtitle}>
+                {minutesListenedToday} of {dailyGoalMinutes} min today
+              </Text>
+
+              <View style={styles.tallProgressWrap}>
+                <ProgressBar progress={dailyGoalPercent} height={8} />
+              </View>
+
+              <View style={styles.tallBtnWrap}>
+                <ShinyButton
+                  variant="dark-glossy"
+                  size="sm"
+                  label="View Goal"
+                  onPress={() => router.push('/(tabs)/settings')}
+                />
+              </View>
+            </View>
+          </HeroCard>
+        </View>
+
+        {/* Right: TWO Compact Dark Glass Cards Stacked */}
+        <View style={styles.bentoRightCol}>
+          {/* Card 1: Your streak */}
+          <GlassCard style={styles.bentoStackedCard} padding={12} borderRadius={20}>
+            <View style={styles.bentoCardInner}>
+              <View style={styles.bentoTopLine}>
+                <View style={[styles.iconChip, { backgroundColor: 'rgba(255, 149, 0, 0.15)', borderColor: 'rgba(255, 149, 0, 0.35)' }]}>
+                  <Flame size={16} color="#FF9500" strokeWidth={2.5} />
+                </View>
+                <RoundArrowButton
+                  variant="glass"
+                  size={32}
+                  onPress={() => router.push('/history')}
+                />
+              </View>
+              <View style={styles.bentoTextWrap}>
+                <Text variant="subhead" rawColor={C.textPrimary} style={styles.bentoCardTitle}>
+                  Your streak
+                </Text>
+                <Text variant="caption" rawColor="#FF9500" style={styles.bentoCardHighlight}>
+                  {learningStats.streak_days} days on fire 🔥
+                </Text>
+              </View>
+            </View>
+          </GlassCard>
+
+          {/* Card 2: Listen again */}
+          <GlassCard style={styles.bentoStackedCard} padding={12} borderRadius={20}>
+            <View style={styles.bentoCardInner}>
+              <View style={styles.bentoTopLine}>
+                <View style={[styles.iconChip, { backgroundColor: 'rgba(142, 242, 15, 0.15)', borderColor: 'rgba(142, 242, 15, 0.35)' }]}>
+                  <History size={16} color={C.brandHero} strokeWidth={2.4} />
+                </View>
+                <RoundArrowButton
+                  variant="glass"
+                  size={32}
+                  onPress={() => router.push('/history')}
+                />
+              </View>
+              <View style={styles.bentoTextWrap}>
+                <Text variant="subhead" rawColor={C.textPrimary} style={styles.bentoCardTitle}>
+                  Listen again
+                </Text>
+                <Text variant="caption" rawColor={C.textSecondary} style={styles.bentoCardHighlight}>
+                  {learningStats.tracks_completed} finished tracks
+                </Text>
+              </View>
+            </View>
+          </GlassCard>
+        </View>
+      </View>
+
+      {/* ─── 6. Section "Quick access" (2-Column Grid of Dark Cards) ───── */}
+      <View style={styles.sectionHeader}>
+        <Text variant="title3" rawColor={C.textPrimary} style={styles.sectionHeading}>
+          Quick access
+        </Text>
+      </View>
+
+      <View style={styles.quickGrid}>
+        {/* Tile 1: Library */}
+        <Pressable
+          style={styles.gridTile}
+          onPress={() => router.push('/(tabs)/library')}
+          accessibilityRole="button"
+          accessibilityLabel="Open Library"
+        >
+          <GlassCard style={styles.tileCard} padding={14} borderRadius={20}>
+            <View style={styles.tileTop}>
+              <View style={[styles.iconChipRound, { backgroundColor: 'rgba(142,242,15,0.15)', borderColor: 'rgba(142,242,15,0.35)' }]}>
+                <BookOpen size={18} color={C.brandHero} strokeWidth={2.4} />
+              </View>
+              <RoundArrowButton
+                variant="glass"
+                size={30}
+                onPress={() => router.push('/(tabs)/library')}
+              />
+            </View>
+            <Text variant="subhead" rawColor={C.textPrimary} style={styles.tileTitle}>
+              Library
+            </Text>
+            <Text variant="caption" rawColor={C.textTertiary} numberOfLines={1}>
+              {libraryItems.length} saved document{libraryItems.length === 1 ? '' : 's'}
+            </Text>
+          </GlassCard>
+        </Pressable>
+
+        {/* Tile 2: Downloads */}
+        <Pressable
+          style={styles.gridTile}
+          onPress={() => router.push('/downloads')}
+          accessibilityRole="button"
+          accessibilityLabel="Open Downloads"
+        >
+          <GlassCard style={styles.tileCard} padding={14} borderRadius={20}>
+            <View style={styles.tileTop}>
+              <View style={[styles.iconChipRound, { backgroundColor: 'rgba(0, 230, 118, 0.15)', borderColor: 'rgba(0, 230, 118, 0.35)' }]}>
+                <Download size={18} color="#00E676" strokeWidth={2.4} />
+              </View>
+              <RoundArrowButton
+                variant="glass"
+                size={30}
+                onPress={() => router.push('/downloads')}
+              />
+            </View>
+            <Text variant="subhead" rawColor={C.textPrimary} style={styles.tileTitle}>
+              Downloads
+            </Text>
+            <Text variant="caption" rawColor={C.textTertiary} numberOfLines={1}>
+              Offline audio tracks
+            </Text>
+          </GlassCard>
+        </Pressable>
+
+        {/* Tile 3: History */}
+        <Pressable
+          style={styles.gridTile}
+          onPress={() => router.push('/history')}
+          accessibilityRole="button"
+          accessibilityLabel="Open History"
+        >
+          <GlassCard style={styles.tileCard} padding={14} borderRadius={20}>
+            <View style={styles.tileTop}>
+              <View style={[styles.iconChipRound, { backgroundColor: 'rgba(0, 176, 255, 0.15)', borderColor: 'rgba(0, 176, 255, 0.35)' }]}>
+                <History size={18} color="#00B0FF" strokeWidth={2.4} />
+              </View>
+              <RoundArrowButton
+                variant="glass"
+                size={30}
+                onPress={() => router.push('/history')}
+              />
+            </View>
+            <Text variant="subhead" rawColor={C.textPrimary} style={styles.tileTitle}>
+              History
+            </Text>
+            <Text variant="caption" rawColor={C.textTertiary} numberOfLines={1}>
+              {learningStats.tracks_completed} completed tracks
+            </Text>
+          </GlassCard>
+        </Pressable>
+
+        {/* Tile 4: Analytics / Learning Stats */}
+        <Pressable
+          style={styles.gridTile}
+          onPress={() => router.push('/(tabs)/settings')}
+          accessibilityRole="button"
+          accessibilityLabel="Open Learning Stats in Settings"
+        >
+          <GlassCard style={styles.tileCard} padding={14} borderRadius={20}>
+            <View style={styles.tileTop}>
+              <View style={[styles.iconChipRound, { backgroundColor: 'rgba(217, 70, 239, 0.15)', borderColor: 'rgba(217, 70, 239, 0.35)' }]}>
+                <TrendingUp size={18} color="#D946EF" strokeWidth={2.4} />
+              </View>
+              <RoundArrowButton
+                variant="glass"
+                size={30}
+                onPress={() => router.push('/(tabs)/settings')}
+              />
+            </View>
+            <Text variant="subhead" rawColor={C.textPrimary} style={styles.tileTitle}>
+              Favorites & Stats
+            </Text>
+            <Text variant="caption" rawColor={C.textTertiary} numberOfLines={1}>
+              {formatMinutes(learningStats.total_minutes)} total listened
+            </Text>
+          </GlassCard>
+        </Pressable>
+      </View>
+
+      {/* ─── 7. Recent Documents Section ─────────────────────────────────── */}
+      <View style={styles.sectionHeader}>
+        <Text variant="title3" rawColor={C.textPrimary} style={styles.sectionHeading}>
+          Recent Documents
+        </Text>
+        <Pressable onPress={() => router.push('/(tabs)/library')} hitSlop={8}>
+          <Text variant="subhead" rawColor={C.brandHero} style={{ fontWeight: '700' }}>
+            View all
+          </Text>
+        </Pressable>
+      </View>
+
+      {/* Clean Document Rows (No Art Inside Rows) */}
       {!isLoadingLibrary && libraryItems.length > 0 && (
-        libraryItems.slice(0, 5).map((item) => (
-          <DocumentRow
-            key={item.document.id}
-            title={item.document.title}
-            originalFilename={item.document.original_filename}
-            mimeType={item.document.mime_type}
-            fileSizeBytes={item.document.file_size_bytes}
-            durationSeconds={item.track?.duration_seconds}
-            pageCount={item.document.page_count}
-            createdAt={item.document.created_at}
-            status={item.document.status}
-            variant="home"
-            onPress={() => {
-              if (item.track && item.document.status === 'ready') {
-                playTrack(item.track, item.document.title);
-                router.push('/player' as any);
-              } else if (item.document.status === 'failed') {
-                router.push('/(tabs)/upload');
-              } else {
-                router.push('/(tabs)/library');
-              }
-            }}
-          />
-        ))
+        <View style={styles.documentListWrap}>
+          {libraryItems.slice(0, 4).map((item) => (
+            <DocumentRow
+              key={item.document.id}
+              title={item.document.title}
+              originalFilename={item.document.original_filename}
+              mimeType={item.document.mime_type}
+              fileSizeBytes={item.document.file_size_bytes}
+              durationSeconds={item.track?.duration_seconds}
+              pageCount={item.document.page_count}
+              createdAt={item.document.created_at}
+              status={item.document.status}
+              variant="home"
+              onPress={() => {
+                if (item.track && item.document.status === 'ready') {
+                  playTrack(item.track, item.document.title);
+                  router.push('/player' as any);
+                } else if (item.document.status === 'failed') {
+                  router.push('/(tabs)/upload');
+                } else {
+                  router.push('/(tabs)/library');
+                }
+              }}
+            />
+          ))}
+        </View>
       )}
 
       {/* Empty State */}
       {!isLoadingLibrary && libraryItems.length === 0 && !libraryError && (
-        <EmptyState
-          pose="welcome"
-          title="Your library is empty"
-          message="Upload your first document (PDF or DOCX) to get an interactive audio explanation."
-          actionLabel="Upload Document"
-          onAction={() => router.push('/(tabs)/upload')}
-        />
+        <View style={styles.sectionWrap}>
+          <HeroCard
+            variant="lime"
+            size="wide"
+            mascot="reading"
+            onPress={() => router.push('/(tabs)/upload')}
+          >
+            <View style={styles.heroLimeContent}>
+              <Text variant="title3" rawColor={C.textDark} style={styles.heroLimeTitle}>
+                Your library is empty
+              </Text>
+              <Text variant="caption" rawColor="rgba(11,20,24,0.75)" style={styles.heroLimeBody}>
+                Upload your first document to experience AI-narrated audio learning.
+              </Text>
+              <View style={styles.heroLimeBtnWrap}>
+                <ShinyButton
+                  variant="dark-glossy"
+                  size="sm"
+                  label="Upload Document"
+                  onPress={() => router.push('/(tabs)/upload')}
+                />
+              </View>
+            </View>
+          </HeroCard>
+        </View>
       )}
+
+      <View style={{ height: 24 }} />
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
-  topBar: {
-    height: 48,
+  headerRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
+    paddingVertical: 12,
+    marginBottom: 4,
   },
-  topBarLeft: {
+  headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  topBarRight: {
-    flexDirection: 'row',
+  avatarBorder: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1.5,
+    borderColor: '#8EF20F',
+    backgroundColor: '#12191E',
+    overflow: 'hidden',
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 8,
+    shadowColor: '#8EF20F',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  greetingCaption: {
-    letterSpacing: 1.2,
-    fontWeight: '700',
-    fontSize: 9,
-  },
-  greetingTitle: {
-    fontWeight: '800',
-    fontSize: 16,
-    lineHeight: 20,
-  },
-  streakChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 149, 0, 0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 149, 0, 0.35)',
-    borderRadius: 14,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    gap: 4,
-  },
-  streakText: {
-    fontWeight: '800',
-    fontSize: 11,
-  },
-  bellBtn: {
+  avatarImg: {
     width: 38,
     height: 38,
-    borderRadius: 19,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderWidth: 1.2,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
-  weekCard: {
-    marginBottom: 8,
+  headerGreetingCol: {
+    marginLeft: 12,
   },
-  weekHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  weekDaysRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  dayCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dayCircleToday: {
-    backgroundColor: '#8EF20F',
-    borderColor: '#8EF20F',
-  },
-  dayCircleCompleted: {
-    backgroundColor: 'rgba(142, 242, 15, 0.15)',
-    borderColor: 'rgba(142, 242, 15, 0.35)',
-  },
-  dayText: {
-    fontWeight: '700',
+  greetingSmall: {
     fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
-  dailyGoalCard: {
-    marginBottom: 10,
+  greetingLarge: {
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.4,
   },
-  dailyGoalHeader: {
+  headerRight: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  rowCenter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  statsGrid: {
-    gap: 8,
-    marginBottom: 10,
-  },
-  statRow: {
-    flexDirection: 'row',
     gap: 8,
   },
-  jobsBanner: {
-    flexDirection: 'row',
+  bellButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    overflow: 'hidden',
+    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(142, 242, 15, 0.12)',
     borderWidth: 1,
-    borderColor: 'rgba(142, 242, 15, 0.35)',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 10,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    position: 'relative',
   },
-  pulseDot: {
+  bellGloss: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '45%',
+    backgroundColor: 'rgba(255, 255, 255, 0.10)',
+    borderTopLeftRadius: 21,
+    borderTopRightRadius: 21,
+  },
+  bellBadge: {
+    position: 'absolute',
+    top: 9,
+    right: 10,
     width: 8,
     height: 8,
     borderRadius: 4,
     backgroundColor: '#8EF20F',
+    borderWidth: 1.5,
+    borderColor: '#0B1418',
   },
-  quickActionsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 8,
-    marginBottom: 12,
+  sectionWrap: {
+    marginBottom: 16,
   },
-  quickActionChip: {
-    flex: 1,
-    height: 40,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.10)',
-    borderRadius: 12,
-    gap: 6,
+  heroLimeContent: {
+    paddingVertical: 4,
   },
-  quickActionLabel: {
-    fontWeight: '600',
-    fontSize: 11,
+  heroLimeTitle: {
+    fontWeight: '800',
+    fontSize: 20,
+    lineHeight: 25,
+    letterSpacing: -0.3,
   },
-  heroWrapper: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(142, 242, 15, 0.35)',
-    marginBottom: 12,
+  heroLimeBody: {
+    marginTop: 6,
+    lineHeight: 18,
+    fontWeight: '500',
   },
-  heroCard: {
-    padding: 12,
+  heroLimeBtnWrap: {
+    marginTop: 14,
+    alignSelf: 'flex-start',
   },
-  heroTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  heroDocIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: 'rgba(142, 242, 15, 0.15)',
+  jobGlassCard: {
     borderWidth: 1,
     borderColor: 'rgba(142, 242, 15, 0.35)',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
-  heroTextCol: {
-    flex: 1,
-  },
-  heroBadgeRow: {
+  jobRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+  },
+  jobMascotWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: 'rgba(142, 242, 15, 0.10)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  jobTextCol: {
+    flex: 1,
+  },
+  jobTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 2,
   },
-  heroBadge: {
+  jobStatusTitle: {
+    marginLeft: 6,
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  forestContent: {
+    paddingVertical: 2,
+  },
+  forestHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    marginBottom: 6,
   },
-  badgeText: {
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-  },
-  langPill: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderRadius: 6,
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-  },
-  langText: {
-    fontSize: 8,
-    fontWeight: '700',
-  },
-  heroTitle: {
-    fontWeight: '700',
-    fontSize: 14,
-    lineHeight: 18,
-  },
-  heroPlayBtn: {
-    width: 38,
-    height: 38,
-  },
-  playCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderBottomWidth: 2,
-    borderBottomColor: '#63B300',
-  },
-  heroProgressWrap: {
-    marginTop: 8,
-  },
-  heroFooter: {
+  forestBadge: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 6,
-  },
-  mascotTipCard: {
-    marginBottom: 12,
-    backgroundColor: 'rgba(142, 242, 15, 0.06)',
+    backgroundColor: 'rgba(142, 242, 15, 0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
     borderColor: 'rgba(142, 242, 15, 0.25)',
   },
-  mascotTipRow: {
+  forestBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    marginLeft: 5,
+  },
+  forestDocTitle: {
+    fontWeight: '800',
+    fontSize: 17,
+    letterSpacing: -0.2,
+  },
+  forestProgressWrap: {
+    marginTop: 10,
+  },
+  forestFooterRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  forestPlayWrap: {
+    position: 'absolute',
+    right: -4,
+    bottom: -4,
   },
   sectionHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 6,
+    marginBottom: 12,
+  },
+  sectionHeading: {
+    fontWeight: '800',
+    fontSize: 19,
+    letterSpacing: -0.3,
+  },
+  bentoRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 18,
+  },
+  bentoLeftCol: {
+    flex: 1.1,
+  },
+  bentoRightCol: {
+    flex: 1,
+    gap: 12,
+  },
+  tallCardContent: {
+    paddingVertical: 2,
+  },
+  tallBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.08)',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
     marginBottom: 8,
+  },
+  tallTitle: {
+    fontWeight: '800',
+    fontSize: 17,
+    lineHeight: 21,
+  },
+  tallSubtitle: {
     marginTop: 4,
+    fontWeight: '600',
+  },
+  tallProgressWrap: {
+    marginTop: 10,
+    marginBottom: 12,
+  },
+  tallBtnWrap: {
+    alignSelf: 'flex-start',
+  },
+  bentoStackedCard: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  bentoCardInner: {
+    justifyContent: 'space-between',
+  },
+  bentoTopLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  iconChip: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bentoTextWrap: {
+    gap: 2,
+  },
+  bentoCardTitle: {
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  bentoCardHighlight: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  quickGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 18,
+  },
+  gridTile: {
+    width: '48%',
+    flexGrow: 1,
+  },
+  tileCard: {
+    height: 106,
+    justifyContent: 'space-between',
+  },
+  tileTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  iconChipRound: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tileTitle: {
+    fontWeight: '700',
+    fontSize: 15,
+    marginTop: 6,
+  },
+  documentListWrap: {
+    gap: 8,
+  },
+  pulseDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#8EF20F',
   },
 });

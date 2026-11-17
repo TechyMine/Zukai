@@ -1,116 +1,101 @@
 /**
- * ZUKAI MESH BACKGROUND
- * Renders rich ambient radial glows + dark obsidian cyber base.
- * Provides authentic 3D spatial lighting and contrast across all screens.
+ * ZUKAI MESH BACKGROUND (Phase UI-V2)
+ * Renders high-performance pre-rendered Aurora WebP backgrounds (<150KB)
+ * with graceful gradient-only fallback for low-end devices / battery-saver.
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   StyleSheet,
   Dimensions,
+  Platform,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../theme/ThemeProvider';
-import type { BackgroundMeshRecipe } from '../theme/tokens/gradients';
 
 const { width, height } = Dimensions.get('window');
 
-type MeshVariant = keyof ReturnType<typeof useTheme>['gradients']['screenMesh'];
+const AURORA_IMAGES: Record<string, number> = {
+  home: require('../../assets/aurora/home_aurora.webp'),
+  library: require('../../assets/aurora/library_aurora.webp'),
+  settings: require('../../assets/aurora/settings_aurora.webp'),
+  player: require('../../assets/aurora/player_aurora.webp'),
+  processing: require('../../assets/aurora/player_aurora.webp'),
+  upload: require('../../assets/aurora/home_aurora.webp'),
+  onboarding: require('../../assets/aurora/home_aurora.webp'),
+  splash: require('../../assets/aurora/player_aurora.webp'),
+  paywall: require('../../assets/aurora/settings_aurora.webp'),
+};
 
-interface MeshBackgroundProps {
-  variant: MeshVariant;
+const FALLBACK_GRADIENTS: Record<string, [string, string, string]> = {
+  home: ['#0D3B2E', '#0F2A12', '#0B1418'],
+  library: ['#0A3328', '#0D2615', '#0B1418'],
+  settings: ['#0A2E2A', '#0D1E24', '#0B1418'],
+  player: ['#133D22', '#0A2518', '#050D10'],
+  processing: ['#0E3820', '#0A2A1A', '#071216'],
+};
+
+export type MeshVariant =
+  | 'home'
+  | 'library'
+  | 'settings'
+  | 'player'
+  | 'processing'
+  | 'upload'
+  | 'onboarding'
+  | 'splash'
+  | 'paywall';
+
+export interface MeshBackgroundProps {
+  variant: MeshVariant | string;
   static?: boolean;
+  useFallbackOnly?: boolean;
 }
 
-export function MeshBackground({ variant }: MeshBackgroundProps) {
-  const { gradients } = useTheme();
-  const recipe = (gradients.screenMesh[variant] || gradients.screenMesh.home) as BackgroundMeshRecipe;
-  const baseColor = recipe.baseColor || '#071216';
+export function MeshBackground({ variant, useFallbackOnly = false }: MeshBackgroundProps) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const normalizedVariant = (variant in AURORA_IMAGES ? variant : 'home') as keyof typeof AURORA_IMAGES;
+  const auroraSource = AURORA_IMAGES[normalizedVariant];
+  const fallbackColors = FALLBACK_GRADIENTS[normalizedVariant] || FALLBACK_GRADIENTS.home;
 
   return (
-    <View style={[StyleSheet.absoluteFill, { backgroundColor: baseColor }]} pointerEvents="none">
-      {/* 1. Base Atmospheric Diagonal Gradient */}
+    <View style={[StyleSheet.absoluteFill, { backgroundColor: '#0B1418' }]} pointerEvents="none">
+      {/* 1. Base Dark Solid Canvas */}
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: '#0B1418' }]} />
+
+      {/* 2. Pre-rendered Aurora WebP Image (Ultra-cheap 60fps GPU layer) */}
+      {!useFallbackOnly && !imageFailed && auroraSource && (
+        <Image
+          source={auroraSource}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          transition={250}
+          onError={() => setImageFailed(true)}
+        />
+      )}
+
+      {/* 3. Gradient-Only Fallback (low-end devices or offline image error) */}
+      {(useFallbackOnly || imageFailed) && (
+        <LinearGradient
+          colors={fallbackColors}
+          locations={[0, 0.45, 1]}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+      )}
+
+      {/* 4. Bottom Soft Vignette Fade into Canvas Base */}
       <LinearGradient
-        colors={['rgba(13, 31, 38, 0.95)', baseColor, '#03080A']}
-        locations={[0, 0.55, 1]}
-        start={{ x: 0.2, y: 0 }}
-        end={{ x: 0.8, y: 1 }}
+        colors={['transparent', 'rgba(11, 20, 24, 0.45)', '#0B1418']}
+        locations={[0.45, 0.75, 1]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
-
-      {/* 2. Top-Right Neon Volt Aura (3D key light) */}
-      <View
-        style={[
-          s.glowOrb,
-          {
-            top: -height * 0.12,
-            right: -width * 0.2,
-            width: width * 0.9,
-            height: width * 0.9,
-            borderRadius: width * 0.45,
-          },
-        ]}
-      >
-        <LinearGradient
-          colors={['rgba(146, 247, 2, 0.22)', 'rgba(11, 248, 7, 0.08)', 'transparent']}
-          locations={[0, 0.45, 1]}
-          start={{ x: 0.5, y: 0.5 }}
-          end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFill}
-        />
-      </View>
-
-      {/* 3. Mid-Left Cyber Cyan / Teal Ambient (3D fill light) */}
-      <View
-        style={[
-          s.glowOrb,
-          {
-            top: height * 0.38,
-            left: -width * 0.3,
-            width: width * 0.85,
-            height: width * 0.85,
-            borderRadius: width * 0.425,
-          },
-        ]}
-      >
-        <LinearGradient
-          colors={['rgba(0, 176, 255, 0.14)', 'rgba(0, 230, 118, 0.05)', 'transparent']}
-          locations={[0, 0.5, 1]}
-          start={{ x: 0.4, y: 0.4 }}
-          end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFill}
-        />
-      </View>
-
-      {/* 4. Bottom Center Subtle Warm Tech Glow */}
-      <View
-        style={[
-          s.glowOrb,
-          {
-            bottom: -height * 0.15,
-            alignSelf: 'center',
-            width: width * 1.1,
-            height: height * 0.35,
-            borderRadius: width * 0.55,
-          },
-        ]}
-      >
-        <LinearGradient
-          colors={['rgba(146, 247, 2, 0.07)', 'rgba(15, 31, 38, 0.4)', 'transparent']}
-          locations={[0, 0.4, 1]}
-          start={{ x: 0.5, y: 1 }}
-          end={{ x: 0.5, y: 0 }}
-          style={StyleSheet.absoluteFill}
-        />
-      </View>
     </View>
   );
 }
-
-const s = StyleSheet.create({
-  glowOrb: {
-    position: 'absolute',
-    overflow: 'hidden',
-  },
-});
