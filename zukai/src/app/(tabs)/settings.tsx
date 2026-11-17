@@ -53,13 +53,13 @@ import type { PreferredLanguage } from '@/types/auth';
 
 const C = {
   brandHero: '#8EF20F',
-  canvasSurface: '#0D1E24',
-  canvasSurfaceRaised: '#132830',
-  canvasSurfaceHighlight: '#18333D',
+  canvasSurface: '#0B1418',
+  canvasSurfaceRaised: '#12191E',
+  canvasSurfaceHighlight: 'rgba(255, 255, 255, 0.08)',
   textPrimary: '#F4F7F2',
   textSecondary: '#B5C4CC',
   textTertiary: '#6B828F',
-  textInverse: '#09161B',
+  textInverse: '#0B1418',
   divider: 'rgba(255, 255, 255, 0.06)',
   error: '#FF5252',
 };
@@ -299,7 +299,7 @@ export default function SettingsScreen() {
       </View>
 
       {/* 1. Compact Profile Card (~96dp) */}
-      <GlassCard style={styles.profileCard} padding={12} borderRadius={16}>
+      <GlassCard style={styles.profileCard} padding={14} borderRadius={24}>
         <View style={styles.profileRow}>
           <View style={styles.avatar}>
             <Text variant="headline" rawColor={C.brandHero} style={{ fontWeight: '800' }}>
@@ -400,7 +400,7 @@ export default function SettingsScreen() {
       <Text variant="caption" rawColor={C.textTertiary} style={styles.sectionHeader}>
         ACCOUNT
       </Text>
-      <GlassCard style={styles.sectionCard} padding={0} borderRadius={16}>
+      <GlassCard style={styles.sectionCard} padding={0} borderRadius={20}>
         <SettingRow
           icon={User}
           label="Edit Name"
@@ -423,7 +423,7 @@ export default function SettingsScreen() {
       <Text variant="caption" rawColor={C.textTertiary} style={styles.sectionHeader}>
         AUDIO & PLAYBACK
       </Text>
-      <GlassCard style={styles.sectionCard} padding={0} borderRadius={16}>
+      <GlassCard style={styles.sectionCard} padding={0} borderRadius={20}>
         <SettingRow
           icon={Volume2}
           label="Test Speaker"
@@ -449,7 +449,7 @@ export default function SettingsScreen() {
       <Text variant="caption" rawColor={C.textTertiary} style={styles.sectionHeader}>
         STORAGE
       </Text>
-      <GlassCard style={styles.sectionCard} padding={0} borderRadius={16}>
+      <GlassCard style={styles.sectionCard} padding={0} borderRadius={20}>
         <SettingRow
           icon={HardDrive}
           label="Offline Tracks"
@@ -470,7 +470,7 @@ export default function SettingsScreen() {
       <Text variant="caption" rawColor={C.textTertiary} style={styles.sectionHeader}>
         SYSTEM
       </Text>
-      <GlassCard style={styles.sectionCard} padding={0} borderRadius={16}>
+      <GlassCard style={styles.sectionCard} padding={0} borderRadius={20}>
         <SettingRow
           icon={Bell}
           label="Notifications"
@@ -480,8 +480,8 @@ export default function SettingsScreen() {
             <Switch
               value={notifEnabled}
               onValueChange={handleNotifToggle}
-              trackColor={{ false: C.canvasSurfaceRaised, true: C.brandHero }}
-              thumbColor={C.textPrimary}
+              trackColor={{ false: 'rgba(255, 255, 255, 0.1)', true: 'rgba(142, 242, 15, 0.4)' }}
+              thumbColor={notifEnabled ? '#8EF20F' : '#6B828F'}
             />
           }
         />
@@ -491,7 +491,7 @@ export default function SettingsScreen() {
       <Text variant="caption" rawColor={C.textTertiary} style={styles.sectionHeader}>
         ABOUT
       </Text>
-      <GlassCard style={styles.sectionCard} padding={0} borderRadius={16}>
+      <GlassCard style={styles.sectionCard} padding={0} borderRadius={20}>
         <SettingRow
           icon={FileText}
           label="Terms & Privacy"
@@ -776,11 +776,11 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     width: '100%',
-    backgroundColor: '#0D1E24',
+    backgroundColor: '#12191E',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: 18,
-    padding: 16,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 24,
+    padding: 18,
   },
   nameInput: {
     width: '100%',

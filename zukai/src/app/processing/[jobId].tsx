@@ -54,12 +54,12 @@ type AudioJobRow = Database['public']['Tables']['audio_jobs']['Row'];
 const C = {
   brandHero: '#8EF20F',
   brandVisor: '#0BF807',
-  canvasSurfaceRaised: '#132830',
-  canvasSurfaceHighlight: '#18333D',
+  canvasSurfaceRaised: '#12191E',
+  canvasSurfaceHighlight: 'rgba(255, 255, 255, 0.08)',
   textPrimary: '#F4F7F2',
   textSecondary: '#B5C4CC',
   textTertiary: '#6B828F',
-  textInverse: '#09161B',
+  textInverse: '#0B1418',
   success: '#00E676',
   warning: '#FFD600',
   error: '#FF5252',
@@ -331,7 +331,7 @@ export default function ProcessingScreen() {
         </View>
 
         {/* 2. Current-Step Card with Single-Line Description */}
-        <GlassCard style={styles.currentStepCard} padding={12} borderRadius={16}>
+        <GlassCard style={styles.currentStepCard} padding={14} borderRadius={20}>
           <View style={styles.currentStepHeader}>
             <View style={styles.currentStepIconBox}>
               <Sparkles size={16} color={C.brandHero} strokeWidth={2.5} />
@@ -374,7 +374,7 @@ export default function ProcessingScreen() {
 
         {/* Waiting for Capacity / Short Break Banner */}
         {status === 'waiting_for_capacity' && (
-          <GlassCard style={styles.stuckCard} padding={12} borderRadius={14}>
+          <GlassCard style={styles.stuckCard} padding={12} borderRadius={20}>
             <View style={styles.stuckRow}>
               <Clock size={18} color="#FFB300" />
               <View style={{ flex: 1, marginLeft: 8 }}>
@@ -396,7 +396,7 @@ export default function ProcessingScreen() {
 
         {/* Stuck in Queue Alert (>60s) */}
         {isQueuedProlonged && !isTerminal && (
-          <GlassCard style={styles.stuckCard} padding={12} borderRadius={14}>
+          <GlassCard style={styles.stuckCard} padding={12} borderRadius={20}>
             <View style={styles.stuckRow}>
               <AlertTriangle size={18} color={C.warning} />
               <View style={{ flex: 1, marginLeft: 8 }}>
@@ -422,7 +422,7 @@ export default function ProcessingScreen() {
         )}
 
         {/* 3. Vertical 5-Step Checklist */}
-        <GlassCard style={styles.stepsCard} padding={12} borderRadius={16}>
+        <GlassCard style={styles.stepsCard} padding={14} borderRadius={20}>
           <Text variant="caption" rawColor={C.textTertiary} style={styles.stepsTitle}>
             PIPELINE STAGES
           </Text>
@@ -484,7 +484,7 @@ export default function ProcessingScreen() {
 
         {/* 4. "Notify me when ready" Toggle */}
         {!isTerminal && (
-          <GlassCard style={styles.notifyCard} padding={10} borderRadius={14}>
+          <GlassCard style={styles.notifyCard} padding={10} borderRadius={20}>
             <View style={styles.notifyRow}>
               <View style={styles.notifyIcon}>
                 <Bell size={16} color={C.brandHero} strokeWidth={2.2} />
@@ -500,8 +500,8 @@ export default function ProcessingScreen() {
               <Switch
                 value={notifyOnComplete}
                 onValueChange={handleToggleNotify}
-                trackColor={{ false: C.canvasSurfaceRaised, true: C.brandHero }}
-                thumbColor={C.textPrimary}
+                trackColor={{ false: 'rgba(255, 255, 255, 0.1)', true: 'rgba(142, 242, 15, 0.4)' }}
+                thumbColor={notifyOnComplete ? '#8EF20F' : '#6B828F'}
               />
             </View>
           </GlassCard>

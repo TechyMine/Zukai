@@ -44,6 +44,7 @@ import { GlassCard } from '../components/GlassCard';
 import { Text } from '../components/Text';
 import { Waveform } from '../components/Waveform';
 import { AudioFeedbackCard } from '../components/AudioFeedbackCard';
+import { HaloPlayButton } from '../components/HaloPlayButton';
 import { usePlaybackStore } from '@/features/playback/playbackStore';
 import {
   downloadTrackForOffline,
@@ -53,17 +54,17 @@ import {
 import { useAuthStore } from '@/lib/authStore';
 
 const C = {
-  brandHero: '#92F702',
+  brandHero: '#8EF20F',
   brandVisor: '#0BF807',
-  canvasSurface: '#0D1E24',
-  canvasSurfaceRaised: '#132830',
-  canvasSurfaceHighlight: '#18333D',
-  textPrimary: '#F8F9FA',
+  canvasSurface: '#0B1418',
+  canvasSurfaceRaised: '#12191E',
+  canvasSurfaceHighlight: 'rgba(255, 255, 255, 0.08)',
+  textPrimary: '#F4F7F2',
   textSecondary: '#B5C4CC',
   textTertiary: '#6B828F',
-  textInverse: '#09161B',
-  glassBorder: 'rgba(255,255,255,0.14)',
-  glassBorderActive: 'rgba(146,247,2,0.45)',
+  textInverse: '#0B1418',
+  glassBorder: 'rgba(255,255,255,0.08)',
+  glassBorderActive: 'rgba(142,242,15,0.45)',
   divider: 'rgba(255,255,255,0.06)',
 };
 
@@ -436,26 +437,18 @@ export default function PlayerScreen() {
             <RotateCcw size={28} color={C.textSecondary} strokeWidth={2} />
           </Pressable>
 
-          <Pressable
-            onPress={togglePlayPause}
-            hitSlop={8}
-            accessibilityLabel={isPlaying ? 'Pause audio' : 'Play audio'}
-          >
-            <LinearGradient
-              colors={['#A4F924', '#92F702', '#75CE00']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={s.playCircle}
-            >
-              {isBuffering ? (
-                <ActivityIndicator size="small" color={C.textInverse} />
-              ) : isPlaying ? (
-                <Pause size={30} color={C.textInverse} strokeWidth={2.5} />
-              ) : (
-                <Play size={30} color={C.textInverse} strokeWidth={2.5} style={{ marginLeft: 3 }} />
-              )}
-            </LinearGradient>
-          </Pressable>
+          {isBuffering ? (
+            <View style={[s.playCircle, { justifyContent: 'center', alignItems: 'center' }]}>
+              <ActivityIndicator size="small" color="#0B1418" />
+            </View>
+          ) : (
+            <HaloPlayButton
+              isPlaying={isPlaying}
+              onPress={togglePlayPause}
+              size={66}
+              ringOffset={8}
+            />
+          )}
 
           <Pressable
             style={s.controlBtn}
@@ -765,7 +758,8 @@ const s = StyleSheet.create({
     borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    borderColor: C.glassBorderActive,
+    backgroundColor: '#12191E',
+    borderColor: 'rgba(255, 255, 255, 0.08)',
     shadowColor: C.brandHero,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.25,
@@ -802,7 +796,7 @@ const s = StyleSheet.create({
   speedPill: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 16,
+    borderRadius: 999,
     backgroundColor: C.canvasSurfaceHighlight,
   },
   speedPillActive: { backgroundColor: C.brandHero },
@@ -827,8 +821,10 @@ const s = StyleSheet.create({
   },
   segmentedControl: {
     flexDirection: 'row',
-    backgroundColor: C.canvasSurfaceRaised,
-    borderRadius: 24,
+    backgroundColor: '#12191E',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 999,
     padding: 4,
     width: '100%',
     gap: 4,
@@ -839,7 +835,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
-    borderRadius: 20,
+    borderRadius: 999,
     gap: 6,
   },
   segmentBtnActive: {

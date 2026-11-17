@@ -159,7 +159,7 @@ export function DocumentRow({
   const metaLine = metaParts.join(' • ');
 
   return (
-    <GlassCard borderRadius={16} padding={0} style={styles.cardWrapper}>
+    <GlassCard borderRadius={20} padding={0} style={styles.cardWrapper}>
       <Pressable
         onPress={onPress}
         style={styles.rowContainer}
@@ -288,7 +288,7 @@ const styles = StyleSheet.create({
   iconTile: {
     width: 40,
     height: 40,
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -318,8 +318,8 @@ const styles = StyleSheet.create({
   },
   chip: {
     height: 22,
-    paddingHorizontal: 7,
-    borderRadius: 6,
+    paddingHorizontal: 9,
+    borderRadius: 20,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',

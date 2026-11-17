@@ -60,13 +60,13 @@ import { useCreateAudioJob } from '@/features/jobs/hooks/useJob';
 
 const C = {
   brandHero: '#8EF20F',
-  canvasSurface: '#0D1E24',
-  canvasSurfaceRaised: '#132830',
-  canvasSurfaceHighlight: '#18333D',
+  canvasSurface: '#0B1418',
+  canvasSurfaceRaised: '#12191E',
+  canvasSurfaceHighlight: 'rgba(255, 255, 255, 0.08)',
   textPrimary: '#F4F7F2',
   textSecondary: '#B5C4CC',
   textTertiary: '#6B828F',
-  textInverse: '#09161B',
+  textInverse: '#0B1418',
   success: '#00E676',
   warning: '#FFD600',
   error: '#FF5252',
@@ -401,7 +401,7 @@ export default function LibraryScreen() {
 
       {/* 2. Search Bar (Height 44) */}
       <View style={styles.searchBar}>
-        <Search size={18} color={C.textTertiary} strokeWidth={2} />
+        <Search size={18} color={C.brandHero} strokeWidth={2} />
         <TextInput
           value={searchQuery}
           onChangeText={setSearchQuery}
@@ -725,11 +725,11 @@ const styles = StyleSheet.create({
     height: 44,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: '#12191E',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.10)',
-    borderRadius: 14,
-    paddingHorizontal: 12,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 20,
+    paddingHorizontal: 14,
     marginBottom: 10,
     gap: 8,
   },
@@ -750,8 +750,8 @@ const styles = StyleSheet.create({
   },
   chip: {
     height: 32,
-    paddingHorizontal: 12,
-    borderRadius: 16,
+    paddingHorizontal: 14,
+    borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -759,9 +759,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#8EF20F',
   },
   chipInactive: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.10)',
+    borderColor: 'rgba(255, 255, 255, 0.08)',
   },
   chipText: {
     fontWeight: '700',
@@ -853,11 +853,11 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     width: '100%',
-    backgroundColor: '#0D1E24',
+    backgroundColor: '#12191E',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: 18,
-    padding: 16,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 24,
+    padding: 18,
   },
   sortRow: {
     flexDirection: 'row',
@@ -869,7 +869,7 @@ const styles = StyleSheet.create({
   },
   sortRowSelected: {
     backgroundColor: 'rgba(142, 242, 15, 0.08)',
-    borderRadius: 8,
+    borderRadius: 12,
     paddingHorizontal: 8,
   },
   actionSheetOverlay: {
@@ -878,11 +878,11 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   actionSheetContent: {
-    backgroundColor: '#0D1E24',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    backgroundColor: '#12191E',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderColor: 'rgba(255, 255, 255, 0.08)',
     padding: 18,
     paddingBottom: 36,
   },
