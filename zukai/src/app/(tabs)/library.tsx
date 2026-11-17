@@ -5,7 +5,7 @@
  * language & depth chips, inline favorite star, 3-dot action sheet, and MP3 export.
  */
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -16,6 +16,7 @@ import {
   Modal,
   Alert,
   Share,
+  RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
@@ -43,7 +44,7 @@ import { ShinyButton } from '@/components/ShinyButton';
 import { EmptyState } from '@/components/EmptyState';
 import { DocumentRow } from '@/components/DocumentRow';
 import { useLibrary, LibraryItem } from '@/features/library/hooks/useLibrary';
-import { useSoftDeleteDocument } from '@/features/documents/hooks/useDocuments';
+import { useSoftDeleteDocument, useRestoreDocument } from '@/features/documents/hooks/useDocuments';
 import { updateDocumentTitle } from '@/features/documents/api/documentsApi';
 import { useQueryClient } from '@tanstack/react-query';
 import { usePlaybackStore } from '@/features/playback/playbackStore';
@@ -103,6 +104,7 @@ export default function LibraryScreen() {
   const { playTrack } = usePlaybackStore();
   const createJobMutation = useCreateAudioJob();
   const softDeleteMutation = useSoftDeleteDocument();
+  const restoreMutation = useRestoreDocument();
 
   // Search & Filter state
   const [activeFilter, setActiveFilter] = useState('All');
@@ -120,6 +122,28 @@ export default function LibraryScreen() {
   const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
 
   const { data: libraryItems = [], isLoading, error, refetch } = useLibrary();
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Undo delete state
+  const [undoToast, setUndoToast] = useState<{ id: string; title: string } | null>(null);
+  const undoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await refetch().catch(() => {});
+    setRefreshing(false);
+  };
+
+  const handleUndoDelete = async () => {
+    if (!undoToast) return;
+    try {
+      await restoreMutation.mutateAsync(undoToast.id);
+      setUndoToast(null);
+      if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+    } catch (err: any) {
+      Alert.alert('Undo Failed', err?.message || 'Could not restore document');
+    }
+  };
 
   // Selected item for action sheet / modal
   const [actionItem, setActionItem] = useState<LibraryItem | null>(null);
@@ -309,6 +333,11 @@ export default function LibraryScreen() {
             try {
               await softDeleteMutation.mutateAsync(item.document.id);
               setActionItem(null);
+              setUndoToast({ id: item.document.id, title: item.document.title });
+              if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+              undoTimeoutRef.current = setTimeout(() => {
+                setUndoToast(null);
+              }, 5000);
             } catch (err: any) {
               Alert.alert('Delete Error', err?.message || 'Unable to delete');
             }
@@ -335,7 +364,18 @@ export default function LibraryScreen() {
   };
 
   return (
-    <ScreenContainer meshVariant="library" hasTabBar>
+    <ScreenContainer
+      meshVariant="library"
+      hasTabBar
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          tintColor={C.brandHero}
+          colors={[C.brandHero]}
+        />
+      }
+    >
       {/* 1. Header with Sort & Refresh */}
       <View style={styles.header}>
         <Text variant="headline" rawColor={C.textPrimary} style={styles.headerTitle}>
@@ -633,6 +673,21 @@ export default function LibraryScreen() {
           </View>
         </Pressable>
       </Modal>
+
+      {/* 5-Second Undo Delete Toast */}
+      {undoToast && (
+        <View style={styles.undoToastContainer}>
+          <Text variant="subhead" rawColor={C.textPrimary} numberOfLines={1} style={{ flex: 1 }}>
+            Deleted "{undoToast.title}"
+          </Text>
+          <Pressable onPress={handleUndoDelete} style={styles.undoButton}>
+            <RotateCcw size={14} color={C.textInverse} strokeWidth={2.5} />
+            <Text variant="caption" rawColor={C.textInverse} style={{ fontWeight: '700', marginLeft: 4 }}>
+              UNDO
+            </Text>
+          </Pressable>
+        </View>
+      )}
     </ScreenContainer>
   );
 }
@@ -873,5 +928,34 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  undoToastContainer: {
+    position: 'absolute',
+    bottom: 84,
+    left: 16,
+    right: 16,
+    backgroundColor: '#18333D',
+    borderColor: 'rgba(255, 255, 255, 0.16)',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    zIndex: 100,
+  },
+  undoButton: {
+    backgroundColor: '#8EF20F',
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginLeft: 12,
   },
 });

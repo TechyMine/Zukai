@@ -113,6 +113,9 @@ describe('PlaybackStore', () => {
       format: 'm4a',
       bitrate_kbps: 128,
       file_size_bytes: 1000000,
+      waveform_peaks: null,
+      sha256: null,
+      hidden: false,
       created_at: new Date().toISOString(),
     };
 

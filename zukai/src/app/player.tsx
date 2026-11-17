@@ -348,9 +348,21 @@ export default function PlayerScreen() {
           </Pressable>
         </View>
 
-        {/* Waveform Visualizer */}
+        {/* Waveform Visualizer & Scrubber */}
         <View style={s.waveformWrap}>
-          <Waveform barCount={32} height={44} active={isPlaying} />
+          <Waveform
+            barCount={36}
+            height={44}
+            active={isPlaying}
+            peaks={activeTrack?.waveform_peaks}
+            progress={progressFraction}
+            onSeek={(frac) => {
+              if (durationMs > 0) {
+                Haptics.selectionAsync();
+                seekTo(frac * durationMs);
+              }
+            }}
+          />
         </View>
 
         {/* Progress Bar with Touch Seeking */}

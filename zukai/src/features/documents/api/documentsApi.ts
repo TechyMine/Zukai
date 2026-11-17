@@ -114,3 +114,11 @@ export async function softDeleteDocument(documentId: string): Promise<boolean> {
   if (error) throw error;
   return Boolean(data);
 }
+
+export async function restoreDocument(documentId: string): Promise<void> {
+  const { error } = await supabase.rpc('restore_document', {
+    p_document_id: documentId,
+  });
+
+  if (error) throw error;
+}

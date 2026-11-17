@@ -31,6 +31,7 @@ export interface ScreenContainerProps {
   contentContainerStyle?: StyleProp<ViewStyle>;
   style?: StyleProp<ViewStyle>;
   keyboardAvoiding?: boolean;
+  refreshControl?: React.ReactElement;
 }
 
 export function ScreenContainer({
@@ -43,6 +44,7 @@ export function ScreenContainer({
   contentContainerStyle,
   style,
   keyboardAvoiding = false,
+  refreshControl,
 }: ScreenContainerProps) {
   const insets = useSafeAreaInsets();
   const hasMiniPlayer = usePlaybackStore((s) => Boolean(s.activeTrack));
@@ -75,6 +77,7 @@ export function ScreenContainer({
       contentContainerStyle={resolvedContentStyle}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
+      refreshControl={refreshControl}
     >
       {children}
     </ScrollView>

@@ -666,33 +666,6 @@ export interface Database {
         Relationships: [];
       };
       // ── Migration 013 ─────────────────────────────────────────────────────────
-      bookmarks: {
-        Row: {
-          id: string;
-          user_id: string;
-          track_id: string;
-          position_seconds: number;
-          note: string | null;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          user_id: string;
-          track_id: string;
-          position_seconds: number;
-          note?: string | null;
-          created_at?: string;
-        };
-        Update: {
-          id?: string;
-          user_id?: string;
-          track_id?: string;
-          position_seconds?: number;
-          note?: string | null;
-          created_at?: string;
-        };
-        Relationships: [];
-      };
       document_favorites: {
         Row: {
           id: string;

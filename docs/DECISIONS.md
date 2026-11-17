@@ -459,3 +459,43 @@
 - **Decision:** Built reusable `<ArtCard>` component providing backdrop art (30-60% opacity), legibility gradient, mascot positioning, and text containment constrained to 60% width to prevent text collision on small 360dp screens while maintaining strict WCAG AA contrast.
 
 
+
+---
+
+## Phase 8 & 9 Decisions (Player Engine, Offline Storage, Library & Diagnostics)
+
+### 50. Normalized Waveform Peaks & SHA-256 Content Hashing
+- **Root Cause:** Audio player waveform was purely decorative with fake animated bars. Furthermore, duplicate audio downloads could not be verified for byte integrity.
+- **Decision:** Added `waveform_peaks` (jsonb array of 200–300 integers scaled 0..255) and `sha256` (text) to `audio_tracks`. Worker publish unit decodes final MP3 to 16-bit mono PCM via `ffmpeg` (`s16le` at 22,050 Hz) and samples peak amplitude per bucket without blocking the publish path on failure. Built `worker/src/scripts/backfillWaveformPeaks.ts` to backfill existing tracks.
+
+### 51. Anti-Clobber Stale-Write Rejection & Stable Device ID
+- **Root Cause:** When multiple client devices or tabs synced playback progress, newer progress could be overwritten by older positions due to asynchronous network arrival.
+- **Decision:** Added `device_id`, `device_label`, and `client_ts` to `playback_progress`. Upgraded `update_playback_progress` RPC to compare client timestamps: if `p_client_ts` is older than existing `client_ts`, the database rejects the overwrite and returns existing state. Device IDs are generated once and persisted in `@zukai_device_id_v1`.
+
+### 52. Offline Progress Queue with 5-Second Throttling
+- **Decision:** Implemented `progressSync.ts` with a 5-second throttle for in-flight playback position saves (completion events bypass throttle). If network fails, updates are stored in AsyncStorage `@zukai_offline_progress_queue_v1` and flushed automatically on the next successful sync or network reconnect.
+
+### 53. Accurate Daily Listening Metrics via `listening_daily`
+- **Root Cause:** User streaks and daily goal minutes were client-side approximations rather than verified server-side listening records.
+- **Decision:** Added `listening_daily` table (keyed on `user_id, day`) and `add_listening_seconds(p_seconds)` RPC. Each progress sync calculates delta seconds listened since previous sync and increments the daily counter.
+
+### 54. Keyset Keyset-Pagination RPC (`list_documents`) & Soft-Delete Undo
+- **Root Cause:** Library screen loaded all active documents, audio tracks, and playback progress via 3 separate unpaginated client queries.
+- **Decision:** Created `list_documents` RPC supporting keyset pagination (`(created_at, id) < (cursor_created_at, cursor_id)`), search filtering (`ILIKE` / `pg_trgm`), status filtering, and sorting. Added `restore_document(p_document_id)` RPC enabling 5-second undo toast after soft-deletion.
+
+### 55. O(log n) Binary-Search Transcript Sync
+- **Root Cause:** Active sentence lookup during audio playback used an O(n) linear loop over transcript segments on every status tick (every 200ms).
+- **Decision:** Replaced linear scan with `findActiveSentenceIndex` binary search in `useTranscript.ts`, finding the active sentence segment in O(log n) time.
+
+### 56. Wall-Clock Deadline Sleep Timer
+- **Root Cause:** Interval-based countdown timers drift or pause entirely when mobile apps are backgrounded by OS power managers.
+- **Decision:** Implemented wall-clock sleep timer in `playbackStore.ts`. Stores `sleepTimerDeadline = Date.now() + minutes * 60_000`. On every tick, remaining seconds are calculated from the wall-clock deadline. When expired, playback is cleanly paused.
+
+### 57. Two-Slot Concurrency Limiter for Resumable Downloads
+- **Decision:** Wrapped offline track downloads in `withDownloadConcurrency` (max 2 active downloads simultaneously) with a FIFO queue. Prevents saturating mobile network connections and memory while caching audio files into `${documentDirectory}audio_cache/`.
+
+### 58. ScreenContainer RefreshControl & Universal Pull-to-Refresh
+- **Decision:** Elevated `refreshControl?: React.ReactElement` into `ScreenContainerProps`, wiring it directly to the inner `ScrollView`. Added native pull-to-refresh (`tintColor={brandHero}`) across Home and Library dashboards with TanStack Query `refetch`.
+
+### 59. Root Error Boundary, Offline Banner & Memory-Capped Diagnostics
+- **Decision:** Wrapped root application layout in `ErrorBoundary.tsx` to prevent unhandled React errors from crashing the native shell. Mounted `OfflineBanner.tsx` with reactive network detection (`fetch` ping to Google 204 endpoint) and created `diagnosticsLogger.ts` with a 500-entry ring buffer for support diagnostics export.

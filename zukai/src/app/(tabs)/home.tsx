@@ -10,6 +10,7 @@ import {
   View,
   StyleSheet,
   Pressable,
+  RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated, {
@@ -113,8 +114,23 @@ export default function HomeScreen() {
   const { profile } = useAuthStore();
   const { activeTrack, isPlaying: isStorePlaying, playTrack, togglePlayPause } = usePlaybackStore();
 
-  const { data: libraryItems = [], isLoading: isLoadingLibrary, error: libraryError } = useLibrary();
-  const { data: usageSummary } = useUsageSummary();
+  const { data: libraryItems = [], isLoading: isLoadingLibrary, error: libraryError, refetch: refetchLibrary } = useLibrary();
+  const { data: usageSummary, refetch: refetchUsage } = useUsageSummary();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([
+      refetchLibrary(),
+      refetchUsage(),
+      supabase.rpc('get_learning_stats').then(({ data, error }) => {
+        if (data && !error) {
+          setLearningStats(data as LearningStats);
+        }
+      }),
+    ]).catch(() => {});
+    setRefreshing(false);
+  };
 
   const [showMascotTip, setShowMascotTip] = useState(true);
 
@@ -186,7 +202,18 @@ export default function HomeScreen() {
   ];
 
   return (
-    <ScreenContainer meshVariant="home" hasTabBar>
+    <ScreenContainer
+      meshVariant="home"
+      hasTabBar
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          tintColor={C.brandHero}
+          colors={[C.brandHero]}
+        />
+      }
+    >
       {/* 1. Header Row (Height 48) */}
       <View style={styles.topBar}>
         <View style={styles.topBarLeft}>

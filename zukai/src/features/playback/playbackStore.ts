@@ -3,7 +3,8 @@
  * Location: /zukai/src/features/playback/playbackStore.ts
  * Description: Global Zustand audio player engine backed by modern expo-audio,
  *              supporting background audio, playback speed, chapter seeking,
- *              karaoke transcript tracking, and throttled Supabase progress sync.
+ *              O(log n) binary-search transcript sync, wall-clock sleep timer,
+ *              and throttled offline-queue Supabase progress sync.
  */
 
 import { create } from 'zustand';
@@ -22,11 +23,17 @@ import {
   getSignedAudioUrl,
 } from '@/features/tracks/api/tracksApi';
 import {
-  updatePlaybackProgress,
   fetchPlaybackProgress,
+  createBookmark,
+  requestAudioUrl,
 } from './api/playbackApi';
+import { syncProgress } from './progressSync';
+import {
+  parseTranscriptSegments,
+  findActiveSentenceIndex,
+  type TranscriptSegment,
+} from './hooks/useTranscript';
 import { getLocalAudioUri } from './downloadManager';
-import { supabase } from '@/lib/supabase';
 import { logger } from '@/lib/logger';
 
 export interface PlaybackState {
@@ -35,6 +42,7 @@ export interface PlaybackState {
   documentTitle: string;
   chapters: ChapterRow[];
   transcript: TranscriptRow | null;
+  parsedSegments: TranscriptSegment[];
   signedUrl: string | null;
 
   // Real-time playback status
@@ -49,6 +57,7 @@ export interface PlaybackState {
   // Sleep timer
   sleepTimerMinutes: number | null;
   sleepTimerRemainingSec: number | null;
+  sleepTimerDeadline: number | null;
 
   // Active chapter and sentence
   activeChapterIndex: number;
@@ -70,14 +79,14 @@ export interface PlaybackState {
 
 // Global reference to the single AudioPlayer instance
 let currentPlayer: AudioPlayer | null = null;
-let lastSyncTimestamp = 0;
-let sleepTimerInterval: any = null;
+let sleepTimerInterval: ReturnType<typeof setInterval> | null = null;
 
 export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   activeTrack: null,
   documentTitle: 'Audio Lesson',
   chapters: [],
   transcript: null,
+  parsedSegments: [],
   signedUrl: null,
 
   isPlaying: false,
@@ -89,6 +98,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   isRepeat: false,
   sleepTimerMinutes: null,
   sleepTimerRemainingSec: null,
+  sleepTimerDeadline: null,
 
   activeChapterIndex: 0,
   activeSentenceIndex: 0,
@@ -130,13 +140,25 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
       // 3. Concurrently fetch audio URI (offline first!), chapters, and transcript
       const localUri = await getLocalAudioUri(track.id).catch(() => null);
-      const [signedAudioUrl, chapters, transcript, savedProgress] = await Promise.all([
-        localUri ? Promise.resolve(localUri) : getSignedAudioUrl(track.storage_path),
+
+      const resolveAudioUri = async (): Promise<string> => {
+        if (localUri) return localUri;
+        try {
+          const storagePath = await requestAudioUrl(track.id, 'stream');
+          return await getSignedAudioUrl(storagePath || track.storage_path);
+        } catch {
+          return await getSignedAudioUrl(track.storage_path);
+        }
+      };
+
+      const [effectiveAudioUri, chapters, transcript, savedProgress] = await Promise.all([
+        resolveAudioUri(),
         fetchChapters(track.id).catch(() => [] as ChapterRow[]),
         fetchTranscript(track.id).catch(() => null),
         fetchPlaybackProgress(track.id).catch(() => null),
       ]);
-      const effectiveAudioUri = localUri || signedAudioUrl;
+
+      const parsedSegments = parseTranscriptSegments(transcript);
 
       const initialPositionMs =
         savedProgress && savedProgress.position_seconds > 0 && !savedProgress.completed
@@ -196,21 +218,9 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
             }
           }
 
-          // Compute active sentence index from transcript segments
-          let sentenceIdx = 0;
-          const transcriptData = get().transcript;
-          if (transcriptData && Array.isArray(transcriptData.segments)) {
-            const segs = transcriptData.segments as Array<{ start_ms: number; end_ms: number }>;
-            for (let i = 0; i < segs.length; i++) {
-              if (pos >= segs[i].start_ms && pos <= segs[i].end_ms) {
-                sentenceIdx = i;
-                break;
-              } else if (pos < segs[i].start_ms) {
-                sentenceIdx = Math.max(0, i - 1);
-                break;
-              }
-            }
-          }
+          // Compute active sentence index using O(log n) binary search
+          const segments = get().parsedSegments;
+          const sentenceIdx = findActiveSentenceIndex(segments, pos / 1000);
 
           set({
             positionMs: pos,
@@ -222,19 +232,15 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
             activeSentenceIndex: sentenceIdx,
           });
 
-          // Throttled persistence (save every 5 seconds or upon finishing)
-          const now = Date.now();
-          if (finished || now - lastSyncTimestamp > 5000) {
-            lastSyncTimestamp = now;
-            updatePlaybackProgress({
-              trackId: track.id,
-              positionSeconds: Math.floor(pos / 1000),
-              speed: currentSpeed,
-              completed: finished,
-            }).catch((syncErr) => {
-              logger.warn('[AudioPlayer] Failed to sync progress:', syncErr);
-            });
-          }
+          // Throttled persistence (5s interval or upon completion)
+          syncProgress({
+            trackId: track.id,
+            positionSeconds: Math.floor(pos / 1000),
+            speed: currentSpeed,
+            completed: finished,
+          }).catch((syncErr) => {
+            logger.warn('[AudioPlayer] Failed to sync progress:', syncErr);
+          });
         });
 
         // Start playback
@@ -244,6 +250,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
           signedUrl: effectiveAudioUri,
           chapters,
           transcript,
+          parsedSegments,
           speed: currentSpeed,
           isBuffering: false,
           isPlaying: true,
@@ -255,6 +262,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
           signedUrl: effectiveAudioUri,
           chapters,
           transcript,
+          parsedSegments,
           speed: currentSpeed,
           isBuffering: false,
           isPlaying: true,
@@ -326,13 +334,10 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   },
 
   seekToSentence: async (sentenceIndex: number) => {
-    const { transcript } = get();
-    if (transcript && Array.isArray(transcript.segments)) {
-      const segs = transcript.segments as Array<{ start_ms: number }>;
-      if (segs[sentenceIndex]) {
-        await get().seekTo(segs[sentenceIndex].start_ms);
-        set({ activeSentenceIndex: sentenceIndex });
-      }
+    const { parsedSegments } = get();
+    if (parsedSegments[sentenceIndex]) {
+      await get().seekTo(parsedSegments[sentenceIndex].start_seconds * 1000);
+      set({ activeSentenceIndex: sentenceIndex });
     }
   },
 
@@ -351,22 +356,35 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     }
 
     if (minutes === null || minutes <= 0) {
-      set({ sleepTimerMinutes: null, sleepTimerRemainingSec: null });
+      set({ sleepTimerMinutes: null, sleepTimerRemainingSec: null, sleepTimerDeadline: null });
       return;
     }
 
     const totalSeconds = Math.round(minutes * 60);
-    set({ sleepTimerMinutes: minutes, sleepTimerRemainingSec: totalSeconds });
+    const deadline = Date.now() + totalSeconds * 1000;
+
+    set({
+      sleepTimerMinutes: minutes,
+      sleepTimerRemainingSec: totalSeconds,
+      sleepTimerDeadline: deadline,
+    });
 
     sleepTimerInterval = setInterval(() => {
-      const remaining = get().sleepTimerRemainingSec;
-      if (remaining === null || remaining <= 1) {
-        clearInterval(sleepTimerInterval);
+      const { sleepTimerDeadline } = get();
+      if (!sleepTimerDeadline) {
+        if (sleepTimerInterval) clearInterval(sleepTimerInterval);
+        return;
+      }
+
+      const remainingSec = Math.max(0, Math.round((sleepTimerDeadline - Date.now()) / 1000));
+
+      if (remainingSec <= 0) {
+        if (sleepTimerInterval) clearInterval(sleepTimerInterval);
         sleepTimerInterval = null;
-        set({ sleepTimerMinutes: null, sleepTimerRemainingSec: null });
-        get().togglePlayPause(); // Auto-pause audio on sleep timer expiration
+        set({ sleepTimerMinutes: null, sleepTimerRemainingSec: null, sleepTimerDeadline: null });
+        get().togglePlayPause(); // Pause audio on expiration
       } else {
-        set({ sleepTimerRemainingSec: remaining - 1 });
+        set({ sleepTimerRemainingSec: remainingSec });
       }
     }, 1000);
   },
@@ -376,22 +394,12 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     if (!activeTrack) return { success: false, error: 'No active track' };
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const userId = session?.user?.id;
-      if (!userId) return { success: false, error: 'Not authenticated' };
-
-      const { error } = await supabase.from('bookmarks').insert({
-        user_id: userId,
-        track_id: activeTrack.id,
-        position_seconds: Math.round(positionMs / 1000),
-        note: note?.trim() || null,
-      });
-
-      if (error) throw error;
+      await createBookmark(activeTrack.id, Math.round(positionMs / 1000), note?.trim() || undefined);
       return { success: true };
-    } catch (err: any) {
-      logger.warn('[AudioPlayer] Failed to save bookmark:', err?.message);
-      return { success: false, error: err?.message };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn('[AudioPlayer] Failed to save bookmark:', msg);
+      return { success: false, error: msg };
     }
   },
 

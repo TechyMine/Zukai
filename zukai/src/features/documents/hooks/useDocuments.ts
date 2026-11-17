@@ -8,6 +8,7 @@ import {
   fetchDocuments,
   fetchDocumentById,
   softDeleteDocument,
+  restoreDocument,
   DocumentRow,
 } from '../api/documentsApi';
 
@@ -49,3 +50,15 @@ export function useSoftDeleteDocument() {
   });
 }
 
+
+export function useRestoreDocument() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (documentId: string) => restoreDocument(documentId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: documentKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: ['library'] });
+    },
+  });
+}

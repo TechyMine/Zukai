@@ -2,6 +2,11 @@
  * ZUKAI OFFLINE DOWNLOAD MANAGER
  * Location: /zukai/src/features/playback/downloadManager.ts
  * Manages local caching of MP3 audio tracks and transcripts for offline listening.
+ * Features:
+ * - Concurrency limit (max 2 active downloads simultaneously)
+ * - Resumable downloads via expo-file-system
+ * - Storage usage metrics calculation
+ * - Cache purge and individual track deletion
  */
 
 // expo-file-system v2 moved documentDirectory to Paths; use the legacy subpath.
@@ -23,6 +28,25 @@ export interface DownloadedTrackMeta {
   chapters: ChapterRow[];
   transcript: TranscriptRow | null;
   downloadedAt: string;
+}
+
+// Concurrency limiter: max 2 simultaneous downloads
+let activeDownloads = 0;
+const MAX_CONCURRENT_DOWNLOADS = 2;
+const downloadQueue: Array<() => void> = [];
+
+export async function withDownloadConcurrency<T>(fn: () => Promise<T>): Promise<T> {
+  if (activeDownloads >= MAX_CONCURRENT_DOWNLOADS) {
+    await new Promise<void>((resolve) => downloadQueue.push(resolve));
+  }
+  activeDownloads++;
+  try {
+    return await fn();
+  } finally {
+    activeDownloads--;
+    const next = downloadQueue.shift();
+    if (next) next();
+  }
 }
 
 async function ensureDirExists(): Promise<void> {
@@ -69,44 +93,47 @@ export async function downloadTrackForOffline(
   transcript: TranscriptRow | null = null,
   onProgress?: (progress: number) => void
 ): Promise<DownloadedTrackMeta> {
-  await ensureDirExists();
+  return withDownloadConcurrency(async () => {
+    await ensureDirExists();
 
-  const signedUrl = await getSignedAudioUrl(track.storage_path);
-  const ext = track.format || 'mp3';
-  const targetUri = `${DOWNLOADS_DIR}${track.id}.${ext}`;
+    const signedUrl = await getSignedAudioUrl(track.storage_path);
+    const ext = track.format || 'mp3';
+    const targetUri = `${DOWNLOADS_DIR}${track.id}.${ext}`;
 
-  const downloadResumable = FileSystem.createDownloadResumable(
-    signedUrl,
-    targetUri,
-    {},
-    (downloadProgress) => {
-      const progress = downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite;
-      onProgress?.(progress);
+    const downloadResumable = FileSystem.createDownloadResumable(
+      signedUrl,
+      targetUri,
+      {},
+      (downloadProgress) => {
+        const progress =
+          downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite;
+        onProgress?.(progress);
+      }
+    );
+
+    const downloadResult = await downloadResumable.downloadAsync();
+    if (!downloadResult || downloadResult.status !== 200) {
+      throw new Error(`Download failed with status ${downloadResult?.status || 'unknown'}`);
     }
-  );
 
-  const downloadResult = await downloadResumable.downloadAsync();
-  if (!downloadResult || downloadResult.status !== 200) {
-    throw new Error(`Download failed with status ${downloadResult?.status || 'unknown'}`);
-  }
+    const meta: DownloadedTrackMeta = {
+      trackId: track.id,
+      documentTitle: title,
+      format: ext,
+      localAudioUri: targetUri,
+      fileSizeBytes: track.file_size_bytes,
+      durationSeconds: track.duration_seconds,
+      chapters,
+      transcript,
+      downloadedAt: new Date().toISOString(),
+    };
 
-  const meta: DownloadedTrackMeta = {
-    trackId: track.id,
-    documentTitle: title,
-    format: ext,
-    localAudioUri: targetUri,
-    fileSizeBytes: track.file_size_bytes,
-    durationSeconds: track.duration_seconds,
-    chapters,
-    transcript,
-    downloadedAt: new Date().toISOString(),
-  };
+    const index = await getDownloadsIndex();
+    index[track.id] = meta;
+    await AsyncStorage.setItem(DOWNLOADS_INDEX_KEY, JSON.stringify(index));
 
-  const index = await getDownloadsIndex();
-  index[track.id] = meta;
-  await AsyncStorage.setItem(DOWNLOADS_INDEX_KEY, JSON.stringify(index));
-
-  return meta;
+    return meta;
+  });
 }
 
 export async function deleteDownloadedTrack(trackId: string): Promise<void> {
@@ -156,4 +183,3 @@ export async function clearAllDownloads(): Promise<void> {
     logger.warn('[DownloadManager] Failed to clear downloads:', err);
   }
 }
-
