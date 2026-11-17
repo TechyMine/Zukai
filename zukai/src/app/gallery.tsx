@@ -46,7 +46,9 @@ const ALL_POSES: MascotPose[] = [
   'confused',
   'crown',
   'pointing',
+  'pointing_left',
   'thumbs_up',
+  'jetpack',
 ];
 
 export default function GalleryScreen() {
@@ -247,7 +249,7 @@ export default function GalleryScreen() {
         </View>
 
         {/* ── 7. ALL 16 CORNER-READY ZUKE POSES ── */}
-        <Text variant="title3" rawColor={C.brandHero} style={s.sectionTitle}>7. All 16 Zuke Mascot Poses</Text>
+        <Text variant="title3" rawColor={C.brandHero} style={s.sectionTitle}>7. All Authentic Zuke Mascot Poses</Text>
         <View style={s.posesGrid}>
           {ALL_POSES.map((pose) => (
             <GlassCard key={pose} style={s.poseTile} padding={10} borderRadius={16}>

@@ -27,6 +27,10 @@ export type MascotPose =
   | 'wrench'
   | 'crown'
   | 'pointing'
+  | 'pointing_left'
+  | 'pointing_right'
+  | 'hero_float'
+  | 'jetpack'
   | 'thumbs_up'
   // Backward compatibility aliases
   | 'welcome'
@@ -62,6 +66,10 @@ export const mascotImages: Record<MascotPose, number> = {
   wrench: require('./typing.png'),
   crown: require('./crown.png'),
   pointing: require('./pointing.png'),
+  pointing_right: require('./pointing.png'),
+  pointing_left: require('./pointing_left.png'),
+  hero_float: require('./wave.png'),
+  jetpack: require('./flame.png'),
   thumbs_up: require('./thumbs_up.png'),
 
   // Aliases
