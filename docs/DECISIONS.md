@@ -499,3 +499,28 @@
 
 ### 59. Root Error Boundary, Offline Banner & Memory-Capped Diagnostics
 - **Decision:** Wrapped root application layout in `ErrorBoundary.tsx` to prevent unhandled React errors from crashing the native shell. Mounted `OfflineBanner.tsx` with reactive network detection (`fetch` ping to Google 204 endpoint) and created `diagnosticsLogger.ts` with a 500-entry ring buffer for support diagnostics export.
+
+
+---
+
+## Phase UI-V2 Decisions (Aurora Backgrounds, Bento Dashboard, Glossy Controls & Official Mascot)
+
+### 60. Pre-Rendered WebP Aurora Backgrounds (`MeshBackground` v2)
+- **Root Cause:** Dynamic multi-stop radial gradients and live blur shaders caused GPU fill-rate spikes and frame drops on lower-end Android test devices.
+- **Decision:** Replaced runtime radial-glow mesh with pre-rendered, lightweight WebP aurora backgrounds (`home_aurora.webp`, `library_aurora.webp`, `settings_aurora.webp`, `player_aurora.webp`, each <35 KB). Maintained CSS gradient fallback for low-end or offline failure modes.
+
+### 61. Illustrated `<HeroCard>` with Silk-Wave Texture Overlay & Corner Anchoring
+- **Decision:** Built `<HeroCard>` supporting `lime | forest | glass | aurora` variants, specular crescent top reflection, subtle silk-wave contour texture overlay (`silk_wave.webp`), 1px top rim highlight, and 58% width text containment to guarantee zero collision with corner mascot illustrations across all display widths down to 360dp.
+
+### 62. Dedicated `<HaloPlayButton>` and `<RoundArrowButton>` Primitives
+- **Decision:** Created reusable glossy controls: `<HaloPlayButton>` featuring an outer neon lime pulsing halo ring synchronized to playback state with a tactile 2dp bottom lip, and `<RoundArrowButton>` (36dp circle with diagonal arrow) for high-density bento navigation tiles.
+
+### 63. Bento Dashboard Home Screen
+- **Decision:** Restructured the Home tab into a dense bento grid: Zuke avatar header with status indicator, Lime HeroCard upload CTA, Forest HeroCard continue listening tile with live progress bar, 2x2 quick navigation grid with RoundArrowButtons, and a 4-item recent documents list.
+
+### 64. Official 3D Zuke Robot Mascot Asset Suite
+- **Root Cause:** Initial generated mascot slices did not match the original production 3D character design from the official Zukai landing page.
+- **Decision:** Directly adopted all 14 official transparent 3D Zuke robot WebP renders from `Landinpage/zukai-website/public/mascot` (`zuke-hero-float`, `zuke-reading-book`, `zuke-headphones-listening`, `zuke-typing-laptop`, `zuke-carrying-document`, `zuke-trophy-celebrate`, `zuke-lightbulb-idea`, `zuke-confused-question`, `zuke-thumbs-up`, `zuke-sleeping`, `zuke-graduation-cap`, `zuke-jetpack-flying`, `zuke-pointing-right`, `zuke-pointing-left`). Converted all poses to RGBA PNGs and mapped them to `MascotPose` aliases (`welcome`, `reading`, `headphones`, `typing`, `uploading`, `success`, `error`, etc.) ensuring 100% visual consistency between web and mobile app.
+
+### 65. Glossy Control Consistency Across All Core Screens
+- **Decision:** Extended Phase UI-V2 dark-glossy design tokens (`#0B1418` canvas base, `#12191E` raised surface, `#8EF20F` brand hero, `rgba(255,255,255,0.08)` borders, and 20dp/24dp radii) across Library, Audio Player, Upload, Processing, and Settings screens. Upgraded DocumentRow chips to 20dp pills and unified audio playback controls with `<HaloPlayButton>`.
