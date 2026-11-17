@@ -25,6 +25,7 @@ const mockPlayerInstance = {
   }),
   loop: false,
   playbackRate: 1.0,
+  setPlaybackRate: jest.fn(function(r) { (this as any).playbackRate = r; }),
 };
 
 jest.mock('expo-audio', () => ({

@@ -182,7 +182,15 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         currentPlayer = playerInstance;
         currentPlayer.loop = get().isRepeat;
         if (currentSpeed !== 1.0) {
-          currentPlayer.playbackRate = currentSpeed;
+          try {
+            if (typeof (currentPlayer as any).setPlaybackRate === 'function') {
+              (currentPlayer as any).setPlaybackRate(currentSpeed);
+            } else {
+              currentPlayer.playbackRate = currentSpeed;
+            }
+          } catch (e) {
+            logger.warn('[AudioPlayer] Error applying initial playbackRate:', e);
+          }
         }
 
         if (initialPositionMs > 0) {
@@ -317,7 +325,11 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     set({ speed });
     if (currentPlayer) {
       try {
-        currentPlayer.playbackRate = speed;
+        if (typeof (currentPlayer as any).setPlaybackRate === 'function') {
+          (currentPlayer as any).setPlaybackRate(speed);
+        } else {
+          currentPlayer.playbackRate = speed;
+        }
       } catch (err) {
         logger.error('[AudioPlayer] setSpeed failed:', err);
       }
