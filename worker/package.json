@@ -18,7 +18,11 @@
     "feedback:report": "tsx src/scripts/feedbackReport.ts",
     "doctor": "tsx src/scripts/doctor.ts",
     "jobs:requeue": "tsx src/scripts/requeueJobs.ts",
+    "job:inspect": "tsx src/scripts/inspectJob.ts",
+    "job:replay": "tsx src/scripts/replayJob.ts",
+    "eval:pipeline": "tsx eval/pipelineEvalRunner.ts",
     "quota:status": "tsx src/scripts/quotaStatus.ts",
+    "load:test": "tsx src/scripts/loadTest.ts",
     "chaos": "tsx src/scripts/chaos.ts",
     "audit:fake-audio": "tsx src/scripts/auditFakeAudio.ts",
     "backfill:peaks": "tsx src/scripts/backfillWaveformPeaks.ts"

@@ -15,6 +15,7 @@ import { logger } from './logger.js';
 import { computeSha256, findReusableTrack, saveArtifact, getArtifact } from './ai/artifactManager.js';
 import { CapacityExhaustedError } from './ai/router.js';
 import { analyzeAudioBuffer } from './audio/peaks.js';
+import { DurableOrchestrator } from './pipelines/orchestrator.js';
 
 let isRunning = false;
 let activeJobCount = 0;
@@ -112,6 +113,39 @@ export async function processJob(job: ClaimedJob): Promise<void> {
         });
         return;
       }
+    }
+
+    // =========================================================================
+    // Pipeline V2: Durable 5-Stage Sequential Agentic Orchestration with RAG
+    // =========================================================================
+    if (config.PIPELINE_V2) {
+      logger.info({ jobId: job.job_id }, 'Routing job to Durable Orchestrator (standard-audio:v2)');
+
+      // Record pipeline_version and prompt_version on the job
+      await supabaseAdmin
+        .from('audio_jobs')
+        .update({
+          pipeline_version: 'v2',
+          prompt_version: 'v2.0-agentic-rag',
+        })
+        .eq('id', job.job_id);
+
+      await DurableOrchestrator.executeJob({
+        jobId: job.job_id,
+        documentId: job.document_id,
+        ownerId: job.owner_id,
+        orgId: job.org_id || undefined,
+        documentBuffer: buffer,
+        language: job.language === 'hinglish' ? 'hinglish' : 'en',
+        depth: job.depth,
+        voiceId: job.voice,
+        pipelineVersion: 'v2',
+        promptVersion: 'v2.0-agentic-rag',
+        supabase: supabaseAdmin,
+        logger,
+      });
+
+      return;
     }
 
     await heartbeatJob(job.job_id, 18, 'Extracting and cleaning text sections');

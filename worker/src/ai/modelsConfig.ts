@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
-export const ModelKindSchema = z.enum(['text', 'tts', 'live-audio', 'cloud-tts']);
+export const ModelKindSchema = z.enum(['text', 'tts', 'live-audio', 'cloud-tts', 'embedding']);
 export const QualityTierSchema = z.enum(['high', 'medium', 'fallback']);
-export const PipelineTaskSchema = z.enum(['outline', 'script', 'voice']);
+export const PipelineTaskSchema = z.enum(['outline', 'script', 'voice', 'embedding']);
 
 export const ModelLimitsSchema = z.object({
   rpm: z.number().positive(),
@@ -25,6 +25,7 @@ export const TaskPrioritiesSchema = z.object({
   outline: z.array(z.string()),
   script: z.array(z.string()),
   voice: z.array(z.string()),
+  embedding: z.array(z.string()).default(['text-embedding-004']),
 });
 
 export const RegistrySettingsSchema = z.object({
@@ -237,6 +238,19 @@ export const DEFAULT_MODELS_CONFIG: RegistryConfig = {
         maxConcurrent: 5,
       },
     },
+    {
+      id: 'text-embedding-004',
+      kind: 'embedding',
+      enabled: true,
+      qualityTier: 'high',
+      limits: {
+        rpm: 1500,
+        tpm: 1000000,
+        rpd: 1500,
+        maxInputTokens: 2048,
+        maxConcurrent: 5,
+      },
+    },
   ],
   taskPriorities: {
     outline: [
@@ -265,6 +279,9 @@ export const DEFAULT_MODELS_CONFIG: RegistryConfig = {
       'gemini-3.8-flash-lite-tts',
       'gemini-3.8-live',
       'google-cloud-tts',
+    ],
+    embedding: [
+      'text-embedding-004',
     ],
   },
   settings: {

@@ -87,8 +87,23 @@ export function formatSupportReference(jobId?: string | null): string {
 export function getFailedStageIndex(
   progress = 0,
   currentStep = '',
-  errorCode = ''
+  errorCode = '',
+  failedStage?: string | null
 ): number {
+  if (failedStage) {
+    const stageMap: Record<string, number> = {
+      reading: 0,
+      understanding: 1,
+      writing: 2,
+      recording: 3,
+      final_touches: 4,
+    };
+    const normalized = failedStage.toLowerCase();
+    if (stageMap[normalized] !== undefined) {
+      return stageMap[normalized];
+    }
+  }
+
   const stepLower = currentStep.toLowerCase();
   const codeLower = errorCode.toLowerCase();
 

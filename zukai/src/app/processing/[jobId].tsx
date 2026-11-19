@@ -293,8 +293,13 @@ export default function ProcessingScreen() {
 
   const failedStageIdx = useMemo(() => {
     if (status !== 'failed') return -1;
-    return getFailedStageIndex(progress, effectiveJob.current_step || '', effectiveJob.error_code || '');
-  }, [status, progress, effectiveJob.current_step, effectiveJob.error_code]);
+    return getFailedStageIndex(
+      progress,
+      effectiveJob.current_step || '',
+      effectiveJob.error_code || '',
+      (effectiveJob as any).failed_stage || null
+    );
+  }, [status, progress, effectiveJob.current_step, effectiveJob.error_code, (effectiveJob as any).failed_stage]);
 
   // Estimate remaining time
   const remainingEstimate = useMemo(() => {

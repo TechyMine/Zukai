@@ -34,6 +34,9 @@ const envSchema = z.object({
   FFMPEG_PATH: z.string().default('ffmpeg'),
   FFPROBE_PATH: z.string().default('ffprobe'),
   WORKER_CONCURRENCY: z.coerce.number().default(2),
+  PIPELINE_V2: z.coerce.boolean().default(true),
+  ADAPTIVE_DIRECT_CONTEXT_TOKEN_THRESHOLD: z.coerce.number().default(4000),
+  EMBEDDING_BATCH_SIZE: z.coerce.number().default(15),
 });
 
 export const config = envSchema.parse({
@@ -61,6 +64,9 @@ export const config = envSchema.parse({
   FFMPEG_PATH: process.env.FFMPEG_PATH,
   FFPROBE_PATH: process.env.FFPROBE_PATH,
   WORKER_CONCURRENCY: process.env.CONCURRENCY || process.env.WORKER_CONCURRENCY,
+  PIPELINE_V2: process.env.PIPELINE_V2 !== 'false',
+  ADAPTIVE_DIRECT_CONTEXT_TOKEN_THRESHOLD: process.env.ADAPTIVE_DIRECT_CONTEXT_TOKEN_THRESHOLD,
+  EMBEDDING_BATCH_SIZE: process.env.EMBEDDING_BATCH_SIZE,
 });
 
 // Voice mapping specifications

@@ -119,13 +119,15 @@ export async function failJob(
   jobId: string,
   errorCode: string,
   errorMessage: string,
-  errorDetails: Record<string, unknown> = {}
+  errorDetails: Record<string, unknown> = {},
+  failedStage: string | null = null
 ): Promise<unknown> {
   const { data, error } = await supabaseAdmin.rpc('fail_job', {
     p_job_id: jobId,
     p_error_code: errorCode,
     p_error_message: errorMessage,
     p_error_details: errorDetails as unknown,
+    p_failed_stage: failedStage,
   });
 
   if (error) {
