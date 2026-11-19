@@ -67,7 +67,7 @@ async function testPipeline(title: string, content: string, language: 'english' 
   console.log(`✓ Script generated successfully!`);
   console.log(`  Total Chapters: ${script.chapters.length}`);
   console.log(`  Total Words:    ${script.totalWords}`);
-  console.log(`  Models Used:    ${script.modelsUsed.join(', ')}`);
+  console.log(`  Models Used:    ${script.modelsUsed?.join(', ') || 'gemini-default'}`);
   script.chapters.forEach((ch, idx) => {
     console.log(`    Chapter ${idx + 1}: "${ch.title}" (${ch.text.split(' ').length} words)`);
     console.log(`      Sample text: "${ch.text.slice(0, 90)}..."`);
