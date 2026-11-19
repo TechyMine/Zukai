@@ -1,70 +1,98 @@
 /**
  * ZUKAI MODEL REGISTRY
  * Location: /worker/src/ai/registry.ts
- * Type-safe interface to the editable models configuration,
- * dynamic model disabling for misconfigured models, and learned quota updates.
+ * Type-safe interface to the models configuration, dynamic model disabling,
+ * and learned quota updates.
+ *
+ * Built-in typed models configuration ensures zero runtime dependency on external
+ * JSON files while maintaining full support for environment overrides
+ * (MODELS_CONFIG_JSON or MODELS_CONFIG_PATH) validated via Zod.
  */
 
 import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { logger } from '../logger.js';
 import type { DiscoveredModelInfo } from './discovery.js';
+import {
+  DEFAULT_MODELS_CONFIG,
+  RegistryConfigSchema,
+  type RegistryConfig,
+  type ModelDefinition,
+  type ModelKind,
+  type QualityTier,
+  type PipelineTask,
+  type ModelLimits,
+  type RegistrySettings,
+} from './modelsConfig.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-export type ModelKind = 'text' | 'tts' | 'live-audio' | 'cloud-tts';
-export type QualityTier = 'high' | 'medium' | 'fallback';
-export type PipelineTask = 'outline' | 'script' | 'voice';
-
-export interface ModelLimits {
-  rpm: number;
-  tpm: number;
-  rpd: number;
-  maxInputTokens: number;
-  maxConcurrent: number;
-}
-
-export interface ModelDefinition {
-  id: string;
-  kind: ModelKind;
-  enabled: boolean;
-  qualityTier: QualityTier;
-  limits: ModelLimits;
-  disabledReason?: string;
-}
-
-export interface RegistryConfig {
-  models: ModelDefinition[];
-  taskPriorities: Record<PipelineTask, string[]>;
-  settings: {
-    dailyResetTimeUtc: string;
-    circuitBreakerFailureThreshold: number;
-    circuitBreakerCooldownSeconds: number;
-    defaultCooldownOn429Seconds: number;
-    maxCapacityWaitHours: number;
-    verbatimWerThreshold: number;
-    safetyMarginPercent: number;
-    rpdBudgetPath: string;
-    liveApiWsEndpoint: string;
-  };
-}
+export type {
+  ModelKind,
+  QualityTier,
+  PipelineTask,
+  ModelLimits,
+  ModelDefinition,
+  RegistryConfig,
+  RegistrySettings,
+};
 
 let loadedConfig: RegistryConfig | null = null;
 const loggedDisabledModels = new Set<string>();
 
+/**
+ * Loads and validates the registry configuration.
+ * Resolution priority:
+ * 1. MODELS_CONFIG_JSON environment variable (JSON string validated by Zod)
+ * 2. MODELS_CONFIG_PATH environment variable (File path to JSON validated by Zod)
+ * 3. DEFAULT_MODELS_CONFIG built-in TypeScript module (type-safe, bundled with code)
+ */
 export function loadRegistryConfig(): RegistryConfig {
   if (loadedConfig) return loadedConfig;
 
-  const configPath = path.resolve(__dirname, 'modelsConfig.json');
-  try {
-    const raw = fs.readFileSync(configPath, 'utf-8');
-    loadedConfig = JSON.parse(raw) as RegistryConfig;
-    return loadedConfig;
-  } catch (err: any) {
-    throw new Error(`Failed to load modelsConfig.json at ${configPath}: ${err.message}`);
+  // 1. Check for MODELS_CONFIG_JSON override
+  const envJson = process.env.MODELS_CONFIG_JSON;
+  if (envJson && envJson.trim().length > 0) {
+    try {
+      const parsed = JSON.parse(envJson);
+      loadedConfig = RegistryConfigSchema.parse(parsed);
+      logger.info('[REGISTRY] Loaded and validated models configuration from MODELS_CONFIG_JSON environment variable');
+      return loadedConfig;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error({ err: msg }, '[REGISTRY] Invalid MODELS_CONFIG_JSON override');
+      throw new Error(`Failed to parse and validate MODELS_CONFIG_JSON override: ${msg}`);
+    }
   }
+
+  // 2. Check for MODELS_CONFIG_PATH override
+  const envPath = process.env.MODELS_CONFIG_PATH;
+  if (envPath && envPath.trim().length > 0) {
+    try {
+      if (!fs.existsSync(envPath)) {
+        throw new Error(`File not found at specified path: ${envPath}`);
+      }
+      const raw = fs.readFileSync(envPath, 'utf-8');
+      const parsed = JSON.parse(raw);
+      loadedConfig = RegistryConfigSchema.parse(parsed);
+      logger.info({ path: envPath }, '[REGISTRY] Loaded and validated models configuration from MODELS_CONFIG_PATH');
+      return loadedConfig;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error({ path: envPath, err: msg }, '[REGISTRY] Invalid MODELS_CONFIG_PATH file');
+      throw new Error(`Failed to load and validate models config from MODELS_CONFIG_PATH (${envPath}): ${msg}`);
+    }
+  }
+
+  // 3. Fallback to typed built-in default configuration
+  // Deep clone to allow runtime mutability (e.g. learning limits, disabling models)
+  loadedConfig = JSON.parse(JSON.stringify(DEFAULT_MODELS_CONFIG)) as RegistryConfig;
+  return loadedConfig;
+}
+
+/**
+ * Resets the in-memory loaded config cache (useful for tests and dynamic reloads).
+ */
+export function resetRegistryConfig(): void {
+  loadedConfig = null;
+  loggedDisabledModels.clear();
 }
 
 export function getModel(modelId: string): ModelDefinition | undefined {
@@ -92,7 +120,7 @@ export function getAllModels(): ModelDefinition[] {
   return cfg.models;
 }
 
-export function getSettings() {
+export function getSettings(): RegistrySettings {
   const cfg = loadRegistryConfig();
   return cfg.settings;
 }

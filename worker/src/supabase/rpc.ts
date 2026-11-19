@@ -118,12 +118,14 @@ export async function completeJob(params: CompleteJobParams): Promise<unknown> {
 export async function failJob(
   jobId: string,
   errorCode: string,
-  errorMessage: string
+  errorMessage: string,
+  errorDetails: Record<string, unknown> = {}
 ): Promise<unknown> {
   const { data, error } = await supabaseAdmin.rpc('fail_job', {
     p_job_id: jobId,
     p_error_code: errorCode,
     p_error_message: errorMessage,
+    p_error_details: errorDetails as unknown,
   });
 
   if (error) {

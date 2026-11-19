@@ -1,0 +1,80 @@
+name: Worker CI & Asset Guard
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'worker/**'
+      - '.github/workflows/worker-ci.yml'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'worker/**'
+      - '.github/workflows/worker-ci.yml'
+
+jobs:
+  test:
+    name: Worker Unit & Asset Integrity Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: worker/package-lock.json
+
+      - name: Install ffmpeg with libmp3lame
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build artifact
+        run: npm run build
+
+      - name: Run test suite (including Stage A5 CI Guard)
+        run: npm test
+
+  docker-smoke:
+    name: Docker Build & Readiness Smoke Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Worker Docker Image
+        run: docker build -t zukai-worker:test .
+
+      - name: Run Container with Test Environment
+        run: |
+          docker run -d --name worker-smoke \
+            -p 3001:3001 \
+            -e NODE_ENV=production \
+            -e PORT=3001 \
+            -e HOST=0.0.0.0 \
+            -e SUPABASE_URL=http://127.0.0.1:54321 \
+            -e SUPABASE_SERVICE_ROLE_KEY=test-service-key \
+            -e GEMINI_API_KEY=test-api-key \
+            -e BUILD_SHA=${{ github.sha }} \
+            zukai-worker:test
+
+      - name: Verify Container Liveness (/healthz)
+        run: |
+          sleep 3
+          curl --fail --retry 5 --retry-delay 2 http://127.0.0.1:3001/healthz || (docker logs worker-smoke && exit 1)
+
+      - name: Inspect Container Artifacts
+        run: |
+          docker exec worker-smoke ls -la /app/dist/ai/
+          docker exec worker-smoke node -e "import('./dist/ai/registry.js').then(m => console.log('Models loaded:', m.loadRegistryConfig().models.length))"

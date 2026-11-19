@@ -297,14 +297,24 @@ export async function processJob(job: ClaimedJob): Promise<void> {
       return;
     }
 
-    const { code, isRetryable } = mapErrorToCode(err);
-    logger.error({ jobId: job.job_id, code, err }, 'Job processing failed');
+    const errorInfo = mapErrorToCode(err);
+    const { code, friendlyMessage, rawDetails } = errorInfo;
+
+    if (code === 'CONFIG_ERROR') {
+      logger.fatal(
+        { jobId: job.job_id, code, err, rawDetails },
+        '[OPERATOR ALERT] CRITICAL: Job failed due to system CONFIG_ERROR. User quota preserved.'
+      );
+    } else {
+      logger.error({ jobId: job.job_id, code, err }, 'Job processing failed');
+    }
 
     try {
       await failJob(
         job.job_id,
         code,
-        err instanceof Error ? err.message : 'Unknown processing error'
+        friendlyMessage,
+        rawDetails
       );
     } catch (failErr) {
       logger.error({ jobId: job.job_id, failErr }, 'Failed to record job failure in database');

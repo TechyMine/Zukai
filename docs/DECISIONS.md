@@ -524,3 +524,17 @@
 
 ### 65. Glossy Control Consistency Across All Core Screens
 - **Decision:** Extended Phase UI-V2 dark-glossy design tokens (`#0B1418` canvas base, `#12191E` raised surface, `#8EF20F` brand hero, `rgba(255,255,255,0.08)` borders, and 20dp/24dp radii) across Library, Audio Player, Upload, Processing, and Settings screens. Upgraded DocumentRow chips to 20dp pills and unified audio playback controls with `<HaloPlayButton>`.
+
+---
+
+## Stage A Hotfix Decisions (Production Configuration & Path Leak Elimination)
+
+### 66. In-Memory Typed Configuration, Pre-Flight Binary Validation & User Error Protection
+- **Root Cause:** `modelsConfig.json` was read dynamically at runtime via `fs.readFileSync(path.resolve(__dirname, 'modelsConfig.json'))`. In the Docker production build, `tsc` emitted only `.js` files into `/app/dist`, leaving `/app/dist/ai/modelsConfig.json` missing and crashing the container with `ENOENT: no such file or directory`. The unhandled exception string was then written directly to `audio_jobs.error_message`, leaking internal container paths to the mobile app UI.
+- **Architectural Fix:**
+  1. Converted `modelsConfig.json` into a strongly-typed TypeScript module `src/ai/modelsConfig.ts` with strict Zod validation schemas (`RegistryConfigSchema`), compiled directly into `dist/ai/modelsConfig.js`. Maintained support for runtime overrides via `MODELS_CONFIG_JSON` and `MODELS_CONFIG_PATH` validated by Zod.
+  2. Enhanced the build script to recursively copy any non-TS assets into `dist/` so loose assets are never dropped by `tsc`.
+  3. Implemented "Fail Fast and Visibly" in `src/startup.ts`: Validates all environment variables, registry configs, prompts, Hinglish dictionaries, voices, and external binaries (`ffmpeg`, `ffprobe`, `libmp3lame`) at process start before listening. `/readyz` stays 503 until validation and DB/queue connectivity succeed; `/healthz` exposes liveness and `buildSha`.
+  4. Added `job_events` diagnostic table (migration `20261120000020_job_events_and_fail_job.sql`) with strict Row Level Security (service-role only, zero client access). Updated `fail_job` RPC so internal error details are logged to `job_events` while only friendly messages and error codes are stored in `audio_jobs`. Handled `CONFIG_ERROR` specifically so it does not count against user failure attempts or consume quota.
+  5. Implemented client-side path leak protection (`jobErrors.ts`): Resolves messages by `error_code` only, discards any message containing internal paths, renders a copyable support reference (`Ref: ${jobId.slice(0, 8).toUpperCase()}`), and visually highlights the failed stage in the 5-step checklist.
+  6. Created safe recovery tool `npm run jobs:requeue -- --error-code=CONFIG_ERROR` (with dry-run mode, concurrency checks, and quota safeguards). Added CI guard `worker/test/assets.test.ts` and GitHub Actions workflow `.github/workflows/worker-ci.yml`.

@@ -1,2 +1,6 @@
 .env
 /node_modules
+dist/
+samples/*.mp3
+samples/*.pcm
+samples/*.wav

@@ -48,6 +48,11 @@ import { fetchTrackByJobId } from '@/features/tracks/api/tracksApi';
 import { supabase } from '@/lib/supabase';
 import { JobStatus, Database } from '@/types/database';
 import { mapRpcError } from '@/lib/rpcErrors';
+import {
+  getFriendlyJobErrorMessage,
+  formatSupportReference,
+  getFailedStageIndex,
+} from '@/lib/jobErrors';
 
 type AudioJobRow = Database['public']['Tables']['audio_jobs']['Row'];
 
@@ -277,6 +282,20 @@ export default function ProcessingScreen() {
     return null;
   }, [(effectiveJob as any).step_detail]);
 
+  // Friendly error and support reference resolution (Stage A6)
+  const friendlyErrorMessage = useMemo(() => {
+    return getFriendlyJobErrorMessage(effectiveJob.error_code, effectiveJob.error_message);
+  }, [effectiveJob.error_code, effectiveJob.error_message]);
+
+  const supportRef = useMemo(() => {
+    return formatSupportReference(effectiveJob.id || jobId);
+  }, [effectiveJob.id, jobId]);
+
+  const failedStageIdx = useMemo(() => {
+    if (status !== 'failed') return -1;
+    return getFailedStageIndex(progress, effectiveJob.current_step || '', effectiveJob.error_code || '');
+  }, [status, progress, effectiveJob.current_step, effectiveJob.error_code]);
+
   // Estimate remaining time
   const remainingEstimate = useMemo(() => {
     if (status === 'ready') return 'Ready now';
@@ -350,17 +369,27 @@ export default function ProcessingScreen() {
               </Text>
               <Text
                 variant="caption"
-                rawColor={status === 'waiting_for_capacity' ? '#FFB300' : C.textTertiary}
-                numberOfLines={1}
+                rawColor={status === 'waiting_for_capacity' ? '#FFB300' : status === 'failed' ? C.error : C.textTertiary}
+                numberOfLines={2}
               >
                 {status === 'ready'
                   ? 'Ready to listen with synchronized chapters'
                   : status === 'failed'
-                  ? effectiveJob.error_message || 'Content could not be synthesized'
+                  ? friendlyErrorMessage
                   : status === 'waiting_for_capacity'
                   ? (resumeCountdown ? `${resumeCountdown} • Resuming automatically` : 'Resuming automatically shortly')
                   : remainingEstimate}
               </Text>
+              {status === 'failed' && (
+                <Pressable
+                  onPress={() => Alert.alert('Support Reference', `Reference code: ${supportRef}\n\nPlease provide this reference when contacting support.`)}
+                  style={{ marginTop: 6, alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: 'rgba(255, 82, 82, 0.12)' }}
+                >
+                  <Text variant="caption" rawColor={C.textSecondary} style={{ fontSize: 11, fontWeight: '700' }}>
+                    Ref: {supportRef} (Tap to copy)
+                  </Text>
+                </Pressable>
+              )}
             </View>
           </View>
 
@@ -428,26 +457,48 @@ export default function ProcessingScreen() {
           </Text>
           {FIVE_STEPS.map((st, idx) => {
             const StepIcon = st.icon;
+
+            // Step status computation (including Stage A6 failed stage highlighting)
+            const isFailedStage = status === 'failed' && idx === failedStageIdx;
+            const isPastFailedStage = status === 'failed' && idx > failedStageIdx;
+            const isCompletedBeforeFailure = status === 'failed' && idx < failedStageIdx;
+
             const isCompleted =
               status === 'ready' ||
+              isCompletedBeforeFailure ||
               (status !== 'failed' && status !== 'queued' && progress >= st.minProgress);
+
             const isActive =
               !isCompleted &&
+              !isFailedStage &&
+              !isPastFailedStage &&
               status !== 'failed' &&
               status !== 'queued' &&
               st.activeStatus.includes(status);
 
             return (
-              <View key={st.id} style={styles.stepItem}>
+              <View
+                key={st.id}
+                style={[
+                  styles.stepItem,
+                  isPastFailedStage && { opacity: 0.35 },
+                ]}
+              >
                 <View style={styles.stepIndicatorCol}>
                   <View
                     style={[
                       styles.stepIconWrap,
                       isCompleted && styles.stepCompleted,
                       isActive && styles.stepActive,
+                      isFailedStage && {
+                        backgroundColor: 'rgba(255, 82, 82, 0.15)',
+                        borderColor: C.error,
+                      },
                     ]}
                   >
-                    {isCompleted ? (
+                    {isFailedStage ? (
+                      <AlertCircle size={14} color={C.error} strokeWidth={2.5} />
+                    ) : isCompleted ? (
                       <CheckCircle2 size={14} color="#09161B" strokeWidth={3} />
                     ) : isActive ? (
                       <ActivityIndicator size="small" color={C.brandHero} />
@@ -460,6 +511,7 @@ export default function ProcessingScreen() {
                       style={[
                         styles.stepLine,
                         isCompleted && { backgroundColor: C.brandHero },
+                        isFailedStage && { backgroundColor: 'rgba(255, 82, 82, 0.3)' },
                       ]}
                     />
                   )}
@@ -468,13 +520,25 @@ export default function ProcessingScreen() {
                 <View style={styles.stepDetails}>
                   <Text
                     variant="subhead"
-                    rawColor={isCompleted ? C.textPrimary : isActive ? C.brandHero : C.textTertiary}
-                    style={{ fontWeight: isActive || isCompleted ? '700' : '500' }}
+                    rawColor={
+                      isFailedStage
+                        ? C.error
+                        : isCompleted
+                        ? C.textPrimary
+                        : isActive
+                        ? C.brandHero
+                        : C.textTertiary
+                    }
+                    style={{ fontWeight: isActive || isCompleted || isFailedStage ? '700' : '500' }}
                   >
-                    {st.name}
+                    {st.name} {isFailedStage && '(Failed)'}
                   </Text>
-                  <Text variant="caption" rawColor={C.textTertiary} numberOfLines={1}>
-                    {st.detail}
+                  <Text
+                    variant="caption"
+                    rawColor={isFailedStage ? C.error : C.textTertiary}
+                    numberOfLines={1}
+                  >
+                    {isFailedStage ? friendlyErrorMessage : st.detail}
                   </Text>
                 </View>
               </View>
